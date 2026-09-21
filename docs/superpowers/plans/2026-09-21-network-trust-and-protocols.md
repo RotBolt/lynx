@@ -23,11 +23,11 @@
 **Status:** Implemented
 
 **Files:**
-- Create: `host/network/src/main/kotlin/dev/lynx/network/CertificateAuthorityManager.kt`
-- Modify: `host/network/src/main/kotlin/dev/lynx/network/HttpProxyCapture.kt`
-- Modify: `apps/cli/src/main/kotlin/dev/lynx/cli/CommandLine.kt`
-- Modify: `apps/cli/src/main/kotlin/dev/lynx/cli/Main.kt`
-- Test: `host/network/src/test/kotlin/dev/lynx/network/CertificateAuthorityManagerTest.kt`
+- Create: `host/network/src/jvmMain/kotlin/dev/lynx/network/CertificateAuthorityManager.kt`
+- Modify: `host/network/src/jvmMain/kotlin/dev/lynx/network/HttpProxyCapture.kt`
+- Modify: `apps/cli/src/jvmMain/kotlin/dev/lynx/cli/CommandLine.kt`
+- Modify: `apps/cli/src/jvmMain/kotlin/dev/lynx/cli/Main.kt`
+- Test: `host/network/src/jvmTest/kotlin/dev/lynx/network/CertificateAuthorityManagerTest.kt`
 
 - [ ] Add failing tests for stable CA material, fingerprint output, and idempotent show/remove behavior.
 - [ ] Add `network ca show|install|remove` command parsing and structured responses.
@@ -40,9 +40,9 @@
 **Status:** Implemented for staging and explicit installer launch
 
 **Files:**
-- Create: `host/network/src/main/kotlin/dev/lynx/network/AndroidCertificateInstaller.kt`
-- Modify: `apps/cli/src/main/kotlin/dev/lynx/cli/Main.kt`
-- Test: `host/network/src/test/kotlin/dev/lynx/network/AndroidCertificateInstallerTest.kt`
+- Create: `host/network/src/jvmMain/kotlin/dev/lynx/network/AndroidCertificateInstaller.kt`
+- Modify: `apps/cli/src/jvmMain/kotlin/dev/lynx/cli/Main.kt`
+- Test: `host/network/src/jvmTest/kotlin/dev/lynx/network/AndroidCertificateInstallerTest.kt`
 
 - [ ] Test certificate staging path, emulator/device distinction, and explicit confirmation state.
 - [ ] Push DER/PEM material to the target and launch the platform certificate installer when available.
@@ -54,10 +54,10 @@
 **Status:** Simulator installation implemented; physical profile delivery pending
 
 **Files:**
-- Create: `host/network/src/main/kotlin/dev/lynx/network/AppleCertificateInstaller.kt`
-- Modify: `apps/cli/src/main/kotlin/dev/lynx/cli/CommandLine.kt`
-- Modify: `apps/cli/src/main/kotlin/dev/lynx/cli/Main.kt`
-- Test: `host/network/src/test/kotlin/dev/lynx/network/AppleCertificateInstallerTest.kt`
+- Create: `host/network/src/jvmMain/kotlin/dev/lynx/network/AppleCertificateInstaller.kt`
+- Modify: `apps/cli/src/jvmMain/kotlin/dev/lynx/cli/CommandLine.kt`
+- Modify: `apps/cli/src/jvmMain/kotlin/dev/lynx/cli/Main.kt`
+- Test: `host/network/src/jvmTest/kotlin/dev/lynx/network/AppleCertificateInstallerTest.kt`
 
 - [ ] Test simulator command construction with a selected UDID.
 - [ ] Implement `simctl keychain add-root-cert` for simulators.
@@ -67,10 +67,10 @@
 ### Task 4: Protocol engine boundary
 
 **Files:**
-- Create: `host/network/src/main/kotlin/dev/lynx/network/ProxyEngine.kt`
+- Create: `host/network/src/jvmMain/kotlin/dev/lynx/network/ProxyEngine.kt`
 - Modify: `host/daemon/src/main/kotlin/dev/lynx/daemon/SourceContracts.kt`
 - Modify: `host/network/build.gradle.kts`
-- Test: `host/network/src/test/kotlin/dev/lynx/network/ProxyEngineContractTest.kt`
+- Test: `host/network/src/jvmTest/kotlin/dev/lynx/network/ProxyEngineContractTest.kt`
 
 - [ ] Define protocol capabilities for HTTP/1.1, HTTP/2, HTTPS MITM, and WebSocket.
 - [ ] Select and pin an engine that supports all required protocols on JVM 21.
@@ -80,10 +80,10 @@
 ### Task 5: HTTP/2 and WebSocket evidence
 
 **Files:**
-- Modify: `host/network/src/main/kotlin/dev/lynx/network/HttpProxyCapture.kt`
+- Modify: `host/network/src/jvmMain/kotlin/dev/lynx/network/HttpProxyCapture.kt`
 - Modify: `core/model/src/main/kotlin/dev/lynx/model/Evidence.kt`
 - Modify: `host/daemon/src/main/kotlin/dev/lynx/daemon/DaemonProtocol.kt`
-- Test: `host/network/src/test/kotlin/dev/lynx/network/Http2WebSocketCaptureTest.kt`
+- Test: `host/network/src/jvmTest/kotlin/dev/lynx/network/Http2WebSocketCaptureTest.kt`
 
 - [ ] Add failing integration tests for HTTP/2 request/response and WebSocket handshake/frame capture.
 - [ ] Translate engine events into versioned protocol fields without exposing engine classes.
@@ -104,8 +104,8 @@
 ### Task 7: Android proxy compatibility (terminal-only)
 
 **Files:**
-- Modify: `host/network/src/main/kotlin/dev/lynx/network/AndroidProxyController.kt`
-- Test: `host/network/src/test/kotlin/dev/lynx/network/AndroidProxyControllerTest.kt`
+- Modify: `host/network/src/jvmMain/kotlin/dev/lynx/network/AndroidProxyController.kt`
+- Test: `host/network/src/jvmTest/kotlin/dev/lynx/network/AndroidProxyControllerTest.kt`
 
 - [x] Add a failing controller test for complete proxy-key application/restoration.
 - [x] Apply the complete Android proxy setting set without application changes.
