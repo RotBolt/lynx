@@ -8,7 +8,7 @@ import dev.lynx.model.NetworkCaptureSettings
 import dev.lynx.model.NetworkFilter
 import dev.lynx.model.RequestId
 import dev.lynx.nativehost.NativeNetworkInspector
-import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.*
 
 expect fun nativeProcessRunner(): NativeProcessRunner
 expect fun nativeSessionStore(): dev.lynx.nativehost.NativeSessionStore
@@ -50,11 +50,24 @@ class NativeCli(private val runner: NativeProcessRunner, private val network: Na
             "worker" -> { networkWorker(option(args, "--port")?.toIntOrNull() ?: args.getOrNull(1)?.toIntOrNull() ?: error("port is required")); return }
             else -> error("Usage: lynx network [start|stop|list|get|doctor]")
         }
-        println(json.encodeToString(network.execute(command)))
+        println(json.encodeToString(normalizeNetworkJson(json.encodeToJsonElement(network.execute(command)))))
     }
 
     private fun networkWorker(port: Int) {
         nativeNetworkWorker(port)
+    }
+
+    private fun normalizeNetworkJson(element: JsonElement): JsonElement = when (element) {
+        is JsonArray -> JsonArray(element.map(::normalizeNetworkJson))
+        is JsonObject -> {
+            val flattened = element.mapValues { (key, value) ->
+                if (key in setOf("id", "sessionId", "requestId", "snapshotId", "databaseId") && value is JsonObject && value.size == 1 && value["value"] is JsonPrimitive) {
+                    value["value"]!!
+                } else normalizeNetworkJson(value)
+            }
+            JsonObject(flattened)
+        }
+        else -> element
     }
 
     private fun runDatabase(args: List<String>) {
