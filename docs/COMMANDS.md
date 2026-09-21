@@ -1,22 +1,37 @@
 # Lynx command reference 🧭
 
-The examples below use independent shell invocations. The local Lynx daemon
-keeps the attached session and evidence between commands.
+The supported developer executable is the native KMP `lynx` binary downloaded
+from Releases. The examples below use independent shell invocations and share
+state through the native local service/evidence store.
 
 ```bash
-LYNX=./apps/cli/build/install/lynx/bin/lynx
+LYNX=lynx
 ```
 
-## Build and daemon ✅
+## Native executable ✅
+
+```bash
+$LYNX devices
+$LYNX --version
+$LYNX network ca show --json
+```
+
+Download and installation instructions are in
+[native distribution](distribution/native.md). No JVM or repository checkout
+is required at runtime.
+
+## JVM compatibility backend
+
+The remaining examples in this file use the legacy JVM daemon protocol for
+compatibility testing. Contributors can build it explicitly:
 
 ```bash
 ./gradlew test :apps:cli:installDist --no-daemon
-$LYNX doctor
-$LYNX devices
+LYNX=./apps/cli/build/install/lynx/bin/lynx
 $LYNX daemon
 ```
 
-Run `daemon` in its own terminal.
+Run `daemon` in its own terminal when using this compatibility backend.
 
 ## Attach and lifecycle ✅
 

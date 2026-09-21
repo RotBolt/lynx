@@ -1,4 +1,8 @@
-# iOS Simulator smoke test 🧪
+# iOS Simulator smoke test (JVM compatibility backend) 🧪
+
+> This document exercises the legacy daemon protocol. The supported developer
+> distribution is the native KMP executable; use `docs/distribution/native.md`
+> for its installation and native command surface.
 
 This is the reproducible macOS smoke test for the currently supported iOS
 target. It verifies that Lynx can attach to the fixture, capture HTTP/1.1,

@@ -1,4 +1,8 @@
-# M1 Android emulator smoke test
+# M1 Android emulator smoke test (JVM compatibility backend)
+
+> This is the historical daemon-protocol smoke test. The supported developer
+> distribution is the standalone native KMP executable documented in
+> `docs/distribution/native.md`; this file remains for JVM regression coverage.
 
 Validated on macOS with an Android emulator (`emulator-5554`) and the
 debuggable package `ai.sarvam.prep.app`.
