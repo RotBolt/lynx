@@ -55,10 +55,11 @@ class PosixNativeNetworkInspector(
             address.sin_addr.s_addr = 0u
             require(bind(server, address.ptr.reinterpret(), sizeOf<sockaddr_in>().convert()) == 0) { "unable to bind native proxy" }
             require(listen(server, 64) == 0) { "unable to listen on native proxy" }
+            fcntl(server, F_SETFL, fcntl(server, F_GETFL) or O_NONBLOCK)
         }
         while (store.isRunning()) {
             val client = accept(server, null, null)
-            if (client >= 0) handle(client)
+            if (client >= 0) handle(client) else usleep(50_000u)
         }
         close(server)
     }
