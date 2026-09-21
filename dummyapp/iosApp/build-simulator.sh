@@ -6,12 +6,13 @@ cd "$ROOT"
 ../gradlew :shared:linkDebugFrameworkIosSimulatorArm64 --no-daemon
 
 SDK="$(xcrun --sdk iphonesimulator --show-sdk-path)"
+SDK_VERSION="$(xcrun --sdk iphonesimulator --show-sdk-version)"
 FRAMEWORK="$ROOT/shared/build/bin/iosSimulatorArm64/debugFramework"
 OUT="$ROOT/iosApp/build/Debug-iphonesimulator/LynxDummyApp.app"
 rm -rf "$OUT"
 mkdir -p "$OUT/Frameworks"
 xcrun swiftc \
-  -target arm64-apple-ios26.4-simulator \
+  -target "arm64-apple-ios${SDK_VERSION}-simulator" \
   -sdk "$SDK" \
   -F "$FRAMEWORK" \
   -framework DummyShared \

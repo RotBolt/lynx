@@ -5,6 +5,7 @@
 [![Build](https://img.shields.io/badge/build-Gradle-02303A?logo=gradle)](https://gradle.org/)
 [![Platform](https://img.shields.io/badge/host-macOS-lightgrey)](lynx-spec/FEATURE_REQUIREMENTS.md)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+[![CI](https://github.com/RotBolt/lynx/actions/workflows/ci.yml/badge.svg)](https://github.com/RotBolt/lynx/actions/workflows/ci.yml)
 
 Lynx is a vendor-agnostic, terminal-first inspector that lets developers and
 AI agents attach to a debuggable Android app, observe network traffic, inspect
@@ -29,7 +30,9 @@ or a particular AI vendor.
 ## Quick start
 
 Requirements: macOS, JDK 21, Gradle wrapper, Android SDK platform-tools, and a
-debuggable Android emulator or device.
+debuggable Android emulator/device or an iOS Simulator. The iOS Simulator
+fixture additionally requires Xcode command-line tools (`xcrun`, `simctl`, and
+the iOS Simulator SDK).
 
 ```bash
 ./gradlew test :apps:cli:installDist --no-daemon
@@ -48,6 +51,27 @@ $LYNX network start --json
 $LYNX network doctor --json
 $LYNX network list --json
 ```
+
+For the verified iOS Simulator workflow, build/install the fixture, attach it
+with the `ios-simulator:` target prefix, and then use the same network and
+database commands:
+
+```bash
+dummyapp/iosApp/build-simulator.sh
+xcrun simctl install <simulator-udid> \
+  dummyapp/iosApp/build/Debug-iphonesimulator/LynxDummyApp.app
+$LYNX attach --device ios-simulator:<simulator-udid> \
+  --package dev.lynx.dummyapp --json
+$LYNX network ca install --ios-simulator <simulator-udid> --json
+$LYNX network start --json
+$LYNX network list --json
+$LYNX db list --json
+$LYNX db snapshot Documents/dummyapp.db --json
+```
+
+The fixture produces one HTTP/1.1 request, one HTTP/2 request, and one
+WebSocket exchange. See the complete [iOS Simulator smoke test](docs/IOS_SMOKE_TEST.md)
+for the build, launch, capture, and query sequence.
 
 The app must be debuggable and must trust the Lynx CA for HTTPS interception.
 Use the onboarding commands when needed:
@@ -110,6 +134,8 @@ not part of the current working CLI:
 - physical iOS capture and complete simulator transport parity; simulator
   attach/database and host-proxy capture are available, with localhost/bypass
   cases 🚧 under construction.
+- automated physical-device iOS capture and device-side database access 🚧
+  under construction.
 
 ## Documentation
 
@@ -118,8 +144,18 @@ not part of the current working CLI:
 - [Implementation details](lynx-spec/IMPLEMENTATION.md)
 - [Manual smoke test](MANUAL_SMOKE_TEST.md)
 - [M1 smoke evidence](lynx-spec/MANUAL_SMOKE_TEST.md)
+- [iOS Simulator smoke test](docs/IOS_SMOKE_TEST.md)
 - [Roadmap](lynx-spec/ROADMAP.md)
 - [Contributing](CONTRIBUTING.md)
+
+## Continuous integration 🧪
+
+Every push to `main`, pull request, and manual workflow dispatch runs the host
+unit/integration suite, shared fixture tests, an Android emulator UI/integration
+smoke test, and an iOS Simulator UI/integration smoke test on macOS. Hosted
+runners without an iOS Simulator runtime report a visible warning and skip only
+that platform smoke test; they do not report a false pass. Platform unit tests
+run in the corresponding Android and iOS jobs.
 
 ## License
 

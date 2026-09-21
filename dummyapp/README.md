@@ -22,18 +22,40 @@ an installable `.app` bundle for the booted arm64 simulator.
 
 The fixture’s iOS app and SQLite writes are verified with `xcrun simctl`. Lynx’s
 simulator target, host-proxy lifecycle, and read-only SQLite inspection are now
-available. Full simulator transport parity (especially localhost bypasses and
-system traffic filtering) remains 🚧 under construction.
+available. The verified simulator run captures HTTP/1.1, HTTP/2, and WebSocket
+traffic and reads the corresponding rows from `Documents/dummyapp.db`. Full
+simulator transport parity (especially localhost bypasses and system traffic
+filtering) remains 🚧 under construction.
 
 Example iOS inspection flow:
 
 ```bash
-UDID=25CD22C1-E1F2-417F-87BA-09D7600F3B93
-lynx attach --device ios-simulator:$UDID --package dev.lynx.dummyapp --json
-lynx network start --json
-lynx network list --json
-lynx db list --json
-lynx db snapshot Documents/dummyapp.db --json
-lynx db tables --snapshot <snapshot-id> --json
-lynx db query --snapshot <snapshot-id> 'SELECT * FROM network_events' --json
+cd dummyapp
+UDID=<booted-simulator-udid>
+LYNX=../apps/cli/build/install/lynx/bin/lynx
+xcrun simctl boot "$UDID" || true
+./iosApp/build-simulator.sh
+xcrun simctl install "$UDID" iosApp/build/Debug-iphonesimulator/LynxDummyApp.app
+$LYNX attach --device ios-simulator:$UDID --package dev.lynx.dummyapp --json
+$LYNX network ca install --ios-simulator "$UDID" --json
+$LYNX network start --json
+# Relaunch the app after the proxy is active, then wait for its scenario.
+xcrun simctl terminate "$UDID" dev.lynx.dummyapp || true
+xcrun simctl launch "$UDID" dev.lynx.dummyapp
+sleep 10
+$LYNX network list --json
+$LYNX db list --json
+$LYNX db snapshot Documents/dummyapp.db --json
+$LYNX db tables --snapshot <snapshot-id> --json
+$LYNX db query --snapshot <snapshot-id> \
+  'SELECT transport, status, response_body, error FROM network_events' --json
+$LYNX network stop --json
 ```
+
+Expected network evidence contains one `HTTP/1.1`, one `HTTP/2`, and one
+`WebSocket` exchange. Expected database evidence contains rows for
+`HTTP_1_1`, `HTTP_2`, and `WEBSOCKET`. The certificate installation command
+may require explicit user trust confirmation in the Simulator.
+
+For a copyable end-to-end smoke test with prerequisites and cleanup, see
+[`docs/IOS_SMOKE_TEST.md`](../docs/IOS_SMOKE_TEST.md).

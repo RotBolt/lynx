@@ -1,0 +1,73 @@
+name: Lynx CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: lynx-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  jvm-unit-and-integration:
+    name: JVM unit and integration tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Run host tests and build the CLI distribution
+        run: ./gradlew test :apps:cli:installDist --no-daemon
+
+  android-emulator-smoke:
+    name: Android emulator UI/integration smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Run Android fixture unit tests
+        run: ./gradlew -p dummyapp :androidApp:testDebugUnitTest --no-daemon
+      - uses: android-actions/setup-android@v3
+      - name: Build the Android fixture
+        run: ./gradlew -p dummyapp :androidApp:assembleDebug --no-daemon
+      - name: Launch fixture and verify UI/process/database smoke contract
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_2
+          emulator-options: -no-window -no-audio -no-boot-anim
+          disable-animations: true
+          script: .github/scripts/android-smoke.sh
+
+  ios-simulator-smoke:
+    name: iOS Simulator UI/integration smoke test
+    # Hosted macOS is required for xcrun/simctl. The script skips explicitly
+    # when the runner image does not expose an iOS Simulator runtime.
+    runs-on: macos-14
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Run shared iOS simulator unit tests
+        run: ./gradlew -p dummyapp :shared:iosSimulatorArm64Test --no-daemon
+      - name: Build, launch, and inspect the iOS fixture
+        run: .github/scripts/ios-simulator-smoke.sh
