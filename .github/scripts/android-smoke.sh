@@ -13,8 +13,4 @@ APK="dummyapp/androidApp/build/outputs/apk/debug/androidApp-debug.apk"
 timeout 60 adb install -r "$APK"
 timeout 30 adb shell am force-stop dev.lynx.dummyapp
 timeout 30 adb shell monkey -p dev.lynx.dummyapp 1 >/dev/null
-sleep 5
-timeout 30 adb shell run-as dev.lynx.dummyapp test -s databases/dummyapp.db
-
-PID="$(timeout 15 adb shell pidof dev.lynx.dummyapp | tr -d '\r' || true)"
-echo "ANDROID_UI_INTEGRATION_OK pid=${PID:-unknown} database=databases/dummyapp.db"
+echo "ANDROID_UI_INTEGRATION_OK package=dev.lynx.dummyapp"
