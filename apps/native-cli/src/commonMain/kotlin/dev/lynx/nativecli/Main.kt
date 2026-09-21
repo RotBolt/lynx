@@ -3,15 +3,24 @@ package dev.lynx.nativecli
 import dev.lynx.nativehost.NativeCommandResult
 import dev.lynx.nativehost.NativeProcessRunner
 import dev.lynx.model.DatabaseId
+import dev.lynx.model.NetworkCommand
+import dev.lynx.model.NetworkCaptureSettings
+import dev.lynx.model.NetworkFilter
+import dev.lynx.model.RequestId
+import dev.lynx.nativehost.NativeNetworkInspector
+import kotlinx.serialization.json.Json
 
 expect fun nativeProcessRunner(): NativeProcessRunner
 expect fun nativeSessionStore(): dev.lynx.nativehost.NativeSessionStore
+expect fun nativeNetworkInspector(): NativeNetworkInspector
+expect fun nativeNetworkWorker(port: Int)
 
 fun main(args: Array<String>) {
-    NativeCli(nativeProcessRunner()).run(args.toList())
+    NativeCli(nativeProcessRunner(), nativeNetworkInspector()).run(args.toList())
 }
 
-class NativeCli(private val runner: NativeProcessRunner) {
+class NativeCli(private val runner: NativeProcessRunner, private val network: NativeNetworkInspector) {
+    private val json = Json { encodeDefaults = true; prettyPrint = false }
     private val sessions = dev.lynx.nativehost.NativeSessionManager(runner, nativeSessionStore()) { "session_${kotlin.time.Clock.System.now().toEpochMilliseconds()}" }
 
     fun run(args: List<String>) {
@@ -26,8 +35,26 @@ class NativeCli(private val runner: NativeProcessRunner) {
             "status" -> println(sessions.status())
             "detach" -> println(sessions.detach())
             "db" -> runDatabase(args.drop(1))
-            else -> println("Usage: lynx [--version|devices|db list|db snapshot|db tables|db query]")
+            "network" -> runNetwork(args.drop(1))
+            else -> println("Usage: lynx [--version|devices|db ...|network start|stop|list|get|doctor]")
         }
+    }
+
+    private fun runNetwork(args: List<String>) {
+        val command = when (args.firstOrNull()) {
+            "start" -> NetworkCommand.Start(NetworkCaptureSettings(listenHost = option(args, "--host") ?: "0.0.0.0", listenPort = option(args, "--port")?.toIntOrNull() ?: 0))
+            "stop" -> NetworkCommand.Stop
+            "list" -> NetworkCommand.List(NetworkFilter(method = option(args, "--method"), status = option(args, "--status")?.toIntOrNull(), urlSubstring = option(args, "--url"), limit = option(args, "--limit")?.toIntOrNull()))
+            "get" -> NetworkCommand.Get(RequestId(args.getOrNull(1) ?: error("request id is required")))
+            "doctor" -> NetworkCommand.Doctor
+            "worker" -> { networkWorker(option(args, "--port")?.toIntOrNull() ?: args.getOrNull(1)?.toIntOrNull() ?: error("port is required")); return }
+            else -> error("Usage: lynx network [start|stop|list|get|doctor]")
+        }
+        println(json.encodeToString(network.execute(command)))
+    }
+
+    private fun networkWorker(port: Int) {
+        nativeNetworkWorker(port)
     }
 
     private fun runDatabase(args: List<String>) {

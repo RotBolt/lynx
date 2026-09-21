@@ -25,3 +25,15 @@ interface NativeDatabaseInspector {
 fun interface NativeNetworkInspector {
     fun execute(command: NetworkCommand): NetworkCommandResult
 }
+
+/** Persistent boundary shared by independent native CLI invocations. */
+interface NativeNetworkStateStore {
+    fun isRunning(): Boolean
+    fun endpoint(): String?
+    fun capabilities(): dev.lynx.model.NetworkCapabilities?
+    fun setRunning(endpoint: String, capabilities: dev.lynx.model.NetworkCapabilities)
+    fun clearRunning()
+    fun append(exchange: dev.lynx.model.NetworkExchange)
+    fun list(filter: dev.lynx.model.NetworkFilter = dev.lynx.model.NetworkFilter()): List<dev.lynx.model.NetworkExchange>
+    fun get(requestId: dev.lynx.model.RequestId): dev.lynx.model.NetworkExchange?
+}

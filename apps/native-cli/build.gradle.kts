@@ -1,5 +1,6 @@
 plugins {
     kotlin("multiplatform")
+    kotlin("plugin.serialization")
 }
 
 kotlin {
@@ -18,6 +19,7 @@ kotlin {
             dependencies {
                 implementation(project(":core:model"))
                 implementation(project(":host:native"))
+                implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
             }
         }
         val commonTest by getting { dependencies { implementation(kotlin("test")) } }
