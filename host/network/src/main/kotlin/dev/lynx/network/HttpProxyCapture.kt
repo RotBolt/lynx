@@ -76,6 +76,7 @@ class HttpProxyCapture(
         caFingerprint = tlsMitm.caManager().show().fingerprint,
         caCertificatePath = caPath?.toString(),
         caTrustStatus = tlsMitm.caManager().show().trustStatus,
+        supportedProtocols = listOf("HTTP/1.1", "HTTP/2", "WebSocket"),
         limitations = listOfNotNull("Android apps must trust the Lynx session CA; certificate pinning may fail", caPath?.let { "session CA PEM: $it" }, "HTTP/2 upstream support depends on the destination negotiating h2", "Android system proxy configuration is managed by a separate adapter"),
     )
 

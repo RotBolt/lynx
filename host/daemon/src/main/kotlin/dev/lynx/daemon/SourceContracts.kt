@@ -28,6 +28,7 @@ data class NetworkCapabilities(
     val httpsMitm: Boolean,
     val maxBodyBytes: Long,
     val limitations: List<String>,
+    val supportedProtocols: List<String> = emptyList(),
     val caFingerprint: String? = null,
     val caCertificatePath: String? = null,
     val caTrustStatus: String? = null,
