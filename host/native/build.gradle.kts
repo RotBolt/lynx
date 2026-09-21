@@ -49,5 +49,8 @@ kotlin {
         val commonTest by getting {
             dependencies { implementation(kotlin("test")) }
         }
+        val posixTest by creating { dependsOn(commonTest) }
+        val macosArm64Test by getting { dependsOn(posixTest) }
+        val linuxX64Test by getting { dependsOn(posixTest) }
     }
 }

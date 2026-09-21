@@ -28,7 +28,7 @@ class NativeHttp2DecoderTest {
     }
 
     @Test
-    fun decodesServerResponseWithClientSession() {
+    fun decodesServerResponsePassively() {
         val decoder = NativeHttp2Decoder(requestSide = false)
         try {
             // The passive response observer receives SETTINGS, a HPACK :status 200 header block,
