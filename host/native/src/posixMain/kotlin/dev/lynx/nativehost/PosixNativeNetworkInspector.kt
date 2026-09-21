@@ -4,8 +4,8 @@ import dev.lynx.model.*
 import kotlinx.cinterop.*
 import platform.posix.*
 
-/** Native, process-independent HTTP/1 proxy. TLS/HTTP2 are deliberately capability-gated until their
- * platform adapters are linked; they must never be misreported as captured. */
+/** Native, process-independent proxy. Protocol parsing stays in the shared POSIX layer while TLS
+ * and HPACK are provided by the platform's native adapters. */
 @OptIn(ExperimentalForeignApi::class)
 class PosixNativeNetworkInspector(
     private val store: PosixNativeNetworkStateStore = PosixNativeNetworkStateStore(),
@@ -24,8 +24,8 @@ class PosixNativeNetworkInspector(
 
     private fun capabilities() = NetworkCapabilities(
         httpsMitm = true,
-        supportedProtocols = listOf("HTTP/1.1", "HTTPS", "WebSocket"),
-        limitations = listOf("HTTP/2 capture is not enabled", "TLS WebSocket capture is not enabled"),
+        supportedProtocols = listOf("HTTP/1.1", "HTTPS", "HTTP/2", "WebSocket"),
+        limitations = listOf("TLS WebSocket capture is not enabled"),
         proxyEndpoint = store.endpoint(),
         proxyStatus = if (store.isRunning()) "running" else "stopped",
         caCertificatePath = "${certificates.ensureCa()}",
@@ -131,6 +131,10 @@ class PosixNativeNetworkInspector(
             val upstreamFd = connect(host, port)
             val upstream = nativeTlsProvider().client(upstreamFd)
             try {
+                if (downstream.applicationProtocol == "h2" && upstream.applicationProtocol == "h2") {
+                    relayTlsHttp2(downstream, upstream, host, requestId, started)
+                    return
+                }
                 val raw = readTlsHeaders(downstream)
                 val request = NativeHttpParser.parseRequest(raw)
                 val body = request.body
@@ -149,6 +153,140 @@ class PosixNativeNetworkInspector(
         } catch (t: Throwable) {
             store.append(NetworkExchange(EvidenceMeta(EvidenceId("ev_${randomId()}"), SessionId("native"), kotlin.time.Clock.System.now(), EvidenceSource.NETWORK, "native", "unknown", null), requestId, NetworkRequest("CONNECT", "https://$host", emptyMap(), null), null, NetworkFailure("HTTPS_MITM_ERROR", t.message), NetworkTiming(started, getTimeMillis(), getTimeMillis() - started), NetworkCaptureMetadata(false, 0, false), protocol = "HTTPS"))
         }
+    }
+
+    /** Forward encrypted HTTP/2 application bytes unchanged while observing both directions with
+     * native nghttp2. The relay never synthesizes protocol frames, so flow control, SETTINGS and
+     * HPACK remain owned by the app and upstream peer exactly as they are on the wire. */
+    private fun relayTlsHttp2(
+        downstream: NativeTlsConnection,
+        upstream: NativeTlsConnection,
+        host: String,
+        connectId: RequestId,
+        started: Long,
+    ) {
+        val requests = mutableMapOf<Int, H2Request>()
+        val responses = mutableMapOf<Int, NativeHttp2Decoder.Exchange>()
+        val requestDecoder = NativeHttp2Decoder(requestSide = true)
+        val responseDecoder = NativeHttp2Decoder(requestSide = false)
+        var downstreamOpen = true
+        var upstreamOpen = true
+        try {
+            memScoped {
+                val pollers = allocArray<pollfd>(2)
+                val deadline = getTimeMillis() + 15 * 60_000
+                while ((downstreamOpen || upstreamOpen) && getTimeMillis() < deadline) {
+                    pollers[0].fd = downstream.fileDescriptor
+                    pollers[0].events = POLLIN.toShort()
+                    pollers[0].revents = 0
+                    pollers[1].fd = upstream.fileDescriptor
+                    pollers[1].events = POLLIN.toShort()
+                    pollers[1].revents = 0
+                    if (poll(pollers, 2u, 250) < 0) break
+
+                    if (downstreamOpen && pollers[0].revents.toInt() and (POLLIN or POLLHUP or POLLERR) != 0) {
+                        val bytes = downstream.read()
+                        if (bytes == null) {
+                            downstreamOpen = false
+                        } else {
+                            upstream.write(bytes)
+                            decodeHttp2(requestDecoder, bytes, host, connectId, started).forEach { decoded ->
+                                requests[decoded.streamId] = H2Request(
+                                    requestId = RequestId("req_${randomId()}_${decoded.streamId}"),
+                                    exchange = decoded,
+                                )
+                            }
+                        }
+                    }
+                    if (upstreamOpen && pollers[1].revents.toInt() and (POLLIN or POLLHUP or POLLERR) != 0) {
+                        val bytes = upstream.read()
+                        if (bytes == null) {
+                            upstreamOpen = false
+                        } else {
+                            downstream.write(bytes)
+                            decodeHttp2(responseDecoder, bytes, host, connectId, started).forEach { decoded ->
+                                responses[decoded.streamId] = decoded
+                            }
+                        }
+                    }
+                    flushHttp2Exchanges(requests, responses, host, connectId, started)
+                }
+            }
+        } finally {
+            requestDecoder.close()
+            responseDecoder.close()
+            // Preserve one-sided failures instead of silently dropping streams when a peer closes.
+            requests.values.forEach { pending ->
+                if (responses.remove(pending.exchange.streamId) == null) {
+                    store.append(http2Exchange(pending, null, host, connectId, started, NetworkFailure("HTTP2_INCOMPLETE", "response stream closed before END_STREAM")))
+                }
+            }
+            responses.values.forEach { response ->
+                store.append(http2Exchange(null, response, host, connectId, started, NetworkFailure("HTTP2_INCOMPLETE", "request stream closed before END_STREAM")))
+            }
+        }
+    }
+
+    private data class H2Request(val requestId: RequestId, val exchange: NativeHttp2Decoder.Exchange)
+
+    private fun decodeHttp2(
+        decoder: NativeHttp2Decoder,
+        bytes: ByteArray,
+        host: String,
+        connectId: RequestId,
+        started: Long,
+    ): List<NativeHttp2Decoder.Exchange> = try {
+        decoder.feed(bytes)
+    } catch (t: Throwable) {
+        store.append(http2Exchange(null, null, host, connectId, started, NetworkFailure("HTTP2_DECODER_ERROR", t.message ?: t::class.simpleName)))
+        emptyList()
+    }
+
+    private fun flushHttp2Exchanges(
+        requests: MutableMap<Int, H2Request>,
+        responses: MutableMap<Int, NativeHttp2Decoder.Exchange>,
+        host: String,
+        connectId: RequestId,
+        started: Long,
+    ) {
+        val complete = requests.keys.intersect(responses.keys).toList()
+        complete.forEach { streamId ->
+            val request = requests.remove(streamId) ?: return@forEach
+            val response = responses.remove(streamId) ?: return@forEach
+            store.append(http2Exchange(request, response, host, connectId, started, null))
+        }
+    }
+
+    private fun http2Exchange(
+        request: H2Request?,
+        response: NativeHttp2Decoder.Exchange?,
+        host: String,
+        connectId: RequestId,
+        started: Long,
+        failure: NetworkFailure?,
+    ): NetworkExchange {
+        val requestHeaders = request?.exchange?.headers.orEmpty()
+        val responseHeaders = response?.headers.orEmpty()
+        val method = requestHeaders[":method"] ?: "UNKNOWN"
+        val scheme = requestHeaders[":scheme"] ?: "https"
+        val authority = requestHeaders[":authority"] ?: host
+        val path = requestHeaders[":path"] ?: "/"
+        val url = "$scheme://$authority$path"
+        val requestBody = request?.exchange?.body?.takeIf { it.isNotEmpty() }?.decodeToString()
+        val status = responseHeaders[":status"]?.toIntOrNull() ?: 0
+        val responseBody = response?.body?.takeIf { it.isNotEmpty() }?.decodeToString()
+        val completed = getTimeMillis()
+        val id = request?.requestId ?: RequestId("${connectId.value}_${response?.streamId ?: "unknown"}")
+        return NetworkExchange(
+            meta = EvidenceMeta(EvidenceId("ev_${randomId()}"), SessionId("native"), kotlin.time.Clock.System.now(), EvidenceSource.NETWORK, "native", "unknown", null),
+            requestId = id,
+            request = NetworkRequest(method, url, requestHeaders, requestBody),
+            response = response?.let { NetworkResponse(status, responseHeaders, responseBody) },
+            failure = failure,
+            timing = NetworkTiming(started, completed, (completed - started).coerceAtLeast(0)),
+            capture = NetworkCaptureMetadata(false, request?.exchange?.body?.size?.toLong() ?: 0, false),
+            protocol = "HTTP/2",
+        )
     }
 
     private fun exchange(request: NativeHttpParser.Request, id: RequestId, response: NativeHttpParser.Response?, failure: NetworkFailure?, started: Long) = NetworkExchange(

@@ -146,14 +146,16 @@ The host cannot inspect a physical device's final user-trust toggle, so that
 state remains explicitly user-confirmed rather than guessed.
 
 ## M1-14 — HTTP/2 proxy capture
-**Status:** Implemented and verified against the emulator Ktor client
+**Status:** Implemented in the KMP native proxy and JVM adapter; native macOS
+verification covers a real TLS HTTP/2 client and Linux cinterop/compile paths
 
 **Priority:** P0 · **Depends on:** M1-03
 
 ### Scope
 
-Replace the temporary HTTP parser behind the proxy boundary with an engine that
-can decode HTTP/2 over TLS and preserve complete request/response evidence.
+Replace the temporary HTTP parser behind the proxy boundary with a passive,
+native HPACK/frame observer that decodes HTTP/2 over TLS and preserves complete
+request/response evidence without changing application code or transport bytes.
 
 ## M1-15 — WebSocket capture
 **Status:** Implemented and verified with an RFC 6455 upgrade/frame integration test

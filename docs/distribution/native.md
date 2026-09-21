@@ -9,8 +9,8 @@ Lynx now has a Kotlin Multiplatform native CLI target graph:
 
 | Target | Artifact | Status |
 |---|---|---|
-| macOS ARM64 | `lynx-macos-arm64.tar.gz` | Database inspection, HTTP/1.1, HTTPS MITM, and plain WebSocket capture available; HTTP/2/TLS-WebSocket adapters under construction 🚧 |
-| Linux x64 | `lynx-linux-x64.tar.gz` | Same native HTTP/1.1 + HTTPS path; Linux smoke test runs in CI |
+| macOS ARM64 | `lynx-macos-arm64.tar.gz` | Database inspection, HTTP/1.1, HTTPS MITM, HTTP/2, and plain WebSocket capture available; TLS-WebSocket adapter under construction 🚧 |
+| Linux x64 | `lynx-linux-x64.tar.gz` | Native HTTP/1.1, HTTPS MITM, HTTP/2, and plain WebSocket capture; Linux smoke test runs in CI |
 | Windows x64 | — | Common KMP code compiles; native runtime adapters under construction 🚧 |
 
 Each archive contains the executable named `lynx`, native TLS runtime libraries,
@@ -82,9 +82,8 @@ lynx db query /tmp/lynx-native-ios-Documents_dummyapp.db.db \
 Snapshots are copied through `adb shell run-as`; SQLite inspection is performed
 by the host `sqlite3` command in read-only mode. Native `network start`, `stop`,
 `list`, `get`, and `doctor` share a JSONL evidence store across independent
-invocations. The native proxy forwards and records cleartext HTTP/1.1 and HTTPS
-CONNECT traffic using the host OpenSSL runtime. The first run creates a CA under
-`$HOME/.lynx/certs`; install `daemon.pem` in the debug app/device trust store.
-Native HTTP/2 and TLS-WebSocket adapters remain under construction 🚧; the JVM
-CLI remains the regression oracle for those protocol variants until their native
-adapters are verified.
+invocations. The native proxy forwards and records cleartext HTTP/1.1, HTTPS
+CONNECT, and HTTP/2 traffic using the host OpenSSL and nghttp2 runtimes. The
+first run creates a CA under `$HOME/.lynx/certs`; install `daemon.pem` in the
+debug app/device trust store. TLS-WebSocket and QUIC/HTTP3 remain under
+construction 🚧.

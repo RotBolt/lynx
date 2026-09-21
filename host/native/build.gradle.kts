@@ -14,6 +14,10 @@ kotlin {
                 defFile(project.file("src/nativeInterop/cinterop/lynx-ssl-macos.def"))
                 compilerOpts("-I${project.file("src/nativeInterop/cinterop").absolutePath}")
             }
+            create("lynxH2") {
+                defFile(project.file("src/nativeInterop/cinterop/lynx-h2-macos.def"))
+                compilerOpts("-I${project.file("src/nativeInterop/cinterop").absolutePath}")
+            }
         }
     }
     linuxX64 {
@@ -21,6 +25,16 @@ kotlin {
             create("lynxSsl") {
                 defFile(project.file("src/nativeInterop/cinterop/lynx-ssl-linux.def"))
                 compilerOpts("-I${project.file("src/nativeInterop/cinterop").absolutePath}")
+                if (System.getProperty("os.name").contains("Mac", ignoreCase = true)) {
+                    compilerOpts("-I/opt/homebrew/opt/openssl@3/include")
+                }
+            }
+            create("lynxH2") {
+                defFile(project.file("src/nativeInterop/cinterop/lynx-h2-linux.def"))
+                compilerOpts("-I${project.file("src/nativeInterop/cinterop").absolutePath}")
+                if (System.getProperty("os.name").contains("Mac", ignoreCase = true)) {
+                    compilerOpts("-I/opt/homebrew/include")
+                }
             }
         }
     }

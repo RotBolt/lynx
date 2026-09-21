@@ -42,7 +42,7 @@ jobs:
           distribution: temurin
           java-version: '21'
       - uses: gradle/actions/setup-gradle@v4
-      - run: sudo apt-get update && sudo apt-get install -y openssl libssl-dev
+      - run: sudo apt-get update && sudo apt-get install -y openssl libssl-dev libnghttp2-dev
       - run: ./gradlew test :core:model:allTests :apps:native-cli:linkReleaseExecutableLinuxX64 --no-daemon
       - name: Run Linux native network smoke test
         shell: bash

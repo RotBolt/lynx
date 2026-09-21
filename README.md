@@ -80,9 +80,8 @@ lynx network stop --json
 ```
 
 The first run creates a CA at `$HOME/.lynx/certs/daemon.pem`; install it in the
-debuggable app/device trust store for HTTPS. Native HTTP/2 and TLS-WebSocket
-capture remain under construction 🚧. Use the JVM distribution below for those
-protocol variants until their native adapters are verified.
+debuggable app/device trust store for HTTPS. Native HTTP/2 capture is included;
+TLS-WebSocket and QUIC/HTTP3 remain under construction 🚧.
 
 ### Network inspector (JVM distribution)
 

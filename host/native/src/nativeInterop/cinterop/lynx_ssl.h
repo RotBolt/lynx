@@ -1,23 +1,35 @@
-typedef struct ssl_ctx_st LYNSslCtx;
-typedef struct ssl_st LYNSsl;
-typedef struct ssl_method_st LYNSslMethod;
+#include <openssl/ssl.h>
+#include <openssl/err.h>
+typedef SSL_CTX LYNSslCtx;
+typedef SSL LYNSsl;
+typedef SSL_METHOD LYNSslMethod;
 
-const LYNSslMethod *TLS_server_method(void);
-const LYNSslMethod *TLS_client_method(void);
-LYNSslCtx *SSL_CTX_new(const LYNSslMethod *method);
-void SSL_CTX_free(LYNSslCtx *ctx);
-int SSL_CTX_use_certificate_file(LYNSslCtx *ctx, const char *file, int type);
-int SSL_CTX_use_PrivateKey_file(LYNSslCtx *ctx, const char *file, int type);
-LYNSsl *SSL_new(LYNSslCtx *ctx);
-void SSL_free(LYNSsl *ssl);
-int SSL_set_fd(LYNSsl *ssl, int fd);
-int SSL_accept(LYNSsl *ssl);
-int SSL_connect(LYNSsl *ssl);
-int SSL_read(LYNSsl *ssl, void *buffer, int length);
-int SSL_write(LYNSsl *ssl, const void *buffer, int length);
-int SSL_shutdown(LYNSsl *ssl);
-int SSL_get_error(const LYNSsl *ssl, int returnCode);
+static int lynx_alpn_select(LYNSsl *ssl, const unsigned char **out,
+                            unsigned char *outlen, const unsigned char *in,
+                            unsigned int inlen, void *arg) {
+  (void)ssl; (void)arg;
+  for (unsigned int i = 0; i + 2 < inlen;) {
+    unsigned int length = in[i++];
+    if (i + length > inlen) break;
+    if (length == 2 && in[i] == 'h' && in[i + 1] == '2') {
+      *out = in + i; *outlen = 2; return SSL_TLSEXT_ERR_OK;
+    }
+    i += length;
+  }
+  return SSL_TLSEXT_ERR_NOACK;
+}
 
-int OPENSSL_init_ssl(unsigned long opts, const void *settings);
-unsigned long ERR_get_error(void);
-void ERR_error_string_n(unsigned long e, char *buf, unsigned long len);
+static inline void lynx_ssl_enable_h2_server(LYNSslCtx *ctx) {
+  SSL_CTX_set_alpn_select_cb(ctx, lynx_alpn_select, NULL);
+}
+
+static inline int lynx_ssl_enable_h2_client(LYNSsl *ssl) {
+  static const unsigned char protocols[] = { 2, 'h', '2' };
+  return SSL_set_alpn_protos(ssl, protocols, sizeof(protocols));
+}
+
+static inline int lynx_ssl_is_h2(const LYNSsl *ssl) {
+  const unsigned char *selected = NULL; unsigned int length = 0;
+  SSL_get0_alpn_selected(ssl, &selected, &length);
+  return selected != NULL && length == 2 && selected[0] == 'h' && selected[1] == '2';
+}

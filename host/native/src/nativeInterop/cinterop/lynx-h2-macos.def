@@ -1,0 +1,4 @@
+package = dev.lynx.nativehost.nghttp2
+headers = lynx_h2.h
+compilerOpts = -I/opt/homebrew/include
+linkerOpts = -L/opt/homebrew/lib -lnghttp2
