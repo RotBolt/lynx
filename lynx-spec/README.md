@@ -46,18 +46,15 @@ JVMTI/ART is not required for either path.
 ## Core workflows
 
 ```bash
-lynx attach com.example.app
+lynx attach --device emulator-5554 --package com.example.app --json
 
-lynx network start
-lynx network list --since 2m --status 400..599 --json
+lynx network start --json
+lynx network list --json
 lynx network get req_42 --json
 
 lynx db list --json
-lynx db snapshot app.db
-lynx db query app.db "SELECT * FROM pending_actions" --json
-lynx db diff snap_10 snap_11 --json
-
-lynx timeline --since 30s --json
+lynx db snapshot databases/app.db --json
+lynx db query --snapshot snap_10 "SELECT * FROM pending_actions" --json
 ```
 
 The agent should be able to reason:
@@ -74,6 +71,7 @@ DB snapshot after request has no userId=42
 ### Network
 - start/stop proxy capture;
 - HTTP/HTTPS request history;
+- HTTP/2 and WebSocket evidence;
 - request/response headers;
 - complete retrievable bodies within session retention;
 - timings;
@@ -85,15 +83,13 @@ DB snapshot after request has no userId=42
 - discover SQLite DBs via ADB + `run-as`;
 - acquire a point-in-time snapshot including WAL state;
 - host-side SQLite query/schema inspection;
-- snapshot history;
-- DB watch;
-- snapshot/table/query diff.
+- read-only snapshot/table/schema/query inspection.
 
 ### Not MVP
 - JVMTI/call stacks;
 - Android Studio inspectors;
 - Layout Inspector;
-- iOS;
+- iOS network capture;
 - MCP;
 - DB writes;
 - request mocking.
