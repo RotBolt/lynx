@@ -27,6 +27,9 @@ interface NativeCertificateManager {
     fun remove(): NativeCertificateState
 }
 
+/** Resolves the current native executable for detached worker processes. */
+expect fun nativeExecutablePath(): String?
+
 interface NativeProcessRunner {
     fun run(command: List<String>): NativeCommandResult
 }

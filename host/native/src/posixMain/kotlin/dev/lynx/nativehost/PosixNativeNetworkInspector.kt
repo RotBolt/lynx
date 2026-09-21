@@ -42,7 +42,9 @@ class PosixNativeNetworkInspector(
         store.setRunning(endpoint, caps, previousProxy)
         // Launch the same native executable as a detached worker. Installers put `lynx` on PATH;
         // tests and embedders can provide LYNX_EXECUTABLE explicitly.
-        val executable = getenv("LYNX_EXECUTABLE")?.toKString()?.takeIf(String::isNotBlank) ?: "lynx"
+        val executable = getenv("LYNX_EXECUTABLE")?.toKString()?.takeIf(String::isNotBlank)
+            ?: nativeExecutablePath()
+            ?: "lynx"
         PosixProcessRunner().run(listOf("sh", "-c", "(nohup '$executable' network worker $port >/dev/null 2>&1 </dev/null &)"))
         repeat(40) {
             if (store.workerReady()) {
