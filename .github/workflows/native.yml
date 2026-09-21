@@ -53,14 +53,9 @@ jobs:
           BIN="$PWD/apps/cli/build/bin/linuxX64/releaseExecutable/lynx.kexe"
           ./scripts/native-linux-smoke.sh "$BIN"
       - run: |
-          mkdir -p dist/lynx-skill
-          cp apps/cli/build/bin/linuxX64/releaseExecutable/lynx.kexe dist/lynx
-          cp /usr/lib/x86_64-linux-gnu/libssl.so.3 dist/
-          cp /usr/lib/x86_64-linux-gnu/libcrypto.so.3 dist/
-          cp /usr/lib/x86_64-linux-gnu/libnghttp2.so.14 dist/
-          patchelf --set-rpath '$ORIGIN' dist/lynx
-          cp docs/agent-skill/SKILL.md dist/lynx-skill/SKILL.md
-          tar -czf dist/lynx-linux-x64.tar.gz -C dist lynx libssl.so.3 libcrypto.so.3 libnghttp2.so.14 lynx-skill
+          ./scripts/package-linux-native.sh \
+            apps/cli/build/bin/linuxX64/releaseExecutable/lynx.kexe \
+            dist/lynx-linux-x64.tar.gz
       - uses: actions/upload-artifact@v4
         with:
           name: lynx-linux-x64
