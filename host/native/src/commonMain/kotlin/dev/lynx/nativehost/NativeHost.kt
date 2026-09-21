@@ -1,8 +1,6 @@
 package dev.lynx.nativehost
 
 import dev.lynx.model.DatabaseId
-import dev.lynx.model.NetworkCommand
-import dev.lynx.model.NetworkCommandResult
 import kotlinx.serialization.Serializable
 
 data class NativeCommandResult(
@@ -39,22 +37,4 @@ interface NativeDatabaseInspector {
     fun snapshot(packageName: String, database: DatabaseId): String
     fun tables(snapshotPath: String): String
     fun query(snapshotPath: String, sql: String): String
-}
-
-/** Platform-neutral boundary used by the native CLI and native proxy adapters. */
-fun interface NativeNetworkInspector {
-    fun execute(command: NetworkCommand): NetworkCommandResult
-}
-
-/** Persistent boundary shared by independent native CLI invocations. */
-interface NativeNetworkStateStore {
-    fun isRunning(): Boolean
-    fun endpoint(): String?
-    fun capabilities(): dev.lynx.model.NetworkCapabilities?
-    fun setRunning(endpoint: String, capabilities: dev.lynx.model.NetworkCapabilities, previousProxy: String? = null)
-    fun previousProxy(): String?
-    fun clearRunning()
-    fun append(exchange: dev.lynx.model.NetworkExchange)
-    fun list(filter: dev.lynx.model.NetworkFilter = dev.lynx.model.NetworkFilter()): List<dev.lynx.model.NetworkExchange>
-    fun get(requestId: dev.lynx.model.RequestId): dev.lynx.model.NetworkExchange?
 }

@@ -3,12 +3,20 @@ plugins {
     kotlin("plugin.serialization")
 }
 
+val linuxNativeLibDir = providers.environmentVariable("LYNX_LINUX_LIB_DIR").orNull
+val allowLinuxSharedUndefined = providers.environmentVariable("LYNX_LINUX_ALLOW_SHLIB_UNDEFINED").orNull == "true"
+
 kotlin {
     jvm {
         compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21) }
     }
     macosArm64()
-    linuxX64()
+    linuxX64 {
+        binaries.all {
+            linuxNativeLibDir?.let { linkerOpts("-L$it") }
+            if (allowLinuxSharedUndefined) linkerOpts("-Wl,--allow-shlib-undefined")
+        }
+    }
     mingwX64()
 
     sourceSets {
