@@ -2,5 +2,8 @@
 build/
 out/
 .idea/
+.kotlin/
+local.properties
+lynx-spec-v2.zip
 *.iml
 .DS_Store
