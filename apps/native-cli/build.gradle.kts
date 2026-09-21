@@ -31,6 +31,7 @@ kotlin {
             dependencies {
                 implementation(project(":core:model"))
                 implementation(project(":host:native"))
+                implementation(project(":host:network"))
                 implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
             }
         }

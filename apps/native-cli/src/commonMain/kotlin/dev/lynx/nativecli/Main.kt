@@ -2,25 +2,24 @@ package dev.lynx.nativecli
 
 import dev.lynx.nativehost.NativeCommandResult
 import dev.lynx.nativehost.NativeProcessRunner
+import dev.lynx.network.NativeNetworkBackend
+import dev.lynx.network.nativeNetworkBackend
 import dev.lynx.model.DatabaseId
 import dev.lynx.model.NetworkCommand
 import dev.lynx.model.NetworkCaptureSettings
 import dev.lynx.model.NetworkFilter
 import dev.lynx.model.RequestId
-import dev.lynx.nativehost.NativeNetworkInspector
 import kotlinx.serialization.json.*
 
 expect fun nativeProcessRunner(): NativeProcessRunner
 expect fun nativeSessionStore(): dev.lynx.nativehost.NativeSessionStore
-expect fun nativeNetworkInspector(): NativeNetworkInspector
-expect fun nativeNetworkWorker(port: Int)
 expect fun nativeCertificateManager(): dev.lynx.nativehost.NativeCertificateManager
 
 fun main(args: Array<String>) {
-    NativeCli(nativeProcessRunner(), nativeNetworkInspector()).run(args.toList())
+    NativeCli(nativeProcessRunner(), nativeNetworkBackend()).run(args.toList())
 }
 
-class NativeCli(private val runner: NativeProcessRunner, private val network: NativeNetworkInspector) {
+class NativeCli(private val runner: NativeProcessRunner, private val network: NativeNetworkBackend) {
     private val json = Json { encodeDefaults = true; prettyPrint = false }
     private val sessions = dev.lynx.nativehost.NativeSessionManager(runner, nativeSessionStore()) { "session_${kotlin.time.Clock.System.now().toEpochMilliseconds()}" }
 
@@ -66,7 +65,7 @@ class NativeCli(private val runner: NativeProcessRunner, private val network: Na
     }
 
     private fun networkWorker(port: Int) {
-        nativeNetworkWorker(port)
+        network.worker(port)
     }
 
     private fun normalizeNetworkJson(element: JsonElement): JsonElement = when (element) {

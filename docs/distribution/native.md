@@ -13,6 +13,12 @@ Lynx now has a Kotlin Multiplatform native CLI target graph:
 | Linux x64 | `lynx-linux-x64.tar.gz` | Native HTTP/1.1, HTTPS MITM, HTTP/2, and plain WebSocket capture; the archive carries OpenSSL/nghttp2 runtime libraries |
 | Windows x64 | — | Common KMP code compiles; native runtime adapters under construction 🚧 |
 
+The network API itself is also a KMP boundary. `host:network` exposes the
+portable command/result contract in `commonMain`; its JVM proxy is isolated in
+`jvmMain`, while macOS and Linux resolve the same API to the native POSIX
+proxy. The standalone executable therefore does not load the JVM network
+backend, Netty, or a JVM TLS provider.
+
 Each archive contains the executable named `lynx`, native TLS/HTTP2 runtime libraries,
 and
 `lynx-skill/SKILL.md`. Install the executable on `PATH` (for example,
