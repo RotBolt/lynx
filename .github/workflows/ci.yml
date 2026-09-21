@@ -65,9 +65,8 @@ jobs:
 
   ios-simulator-smoke:
     name: iOS Simulator UI/integration smoke test
-    # Hosted macOS is required for xcrun/simctl. The script skips explicitly
-    # when the runner image does not expose an iOS Simulator runtime.
-    runs-on: macos-14
+    # macOS 26 provides the iOS 26 SDK required by the Kotlin/Native fixture.
+    runs-on: macos-26
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
