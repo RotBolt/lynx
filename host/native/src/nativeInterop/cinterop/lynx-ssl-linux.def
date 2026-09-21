@@ -1,0 +1,3 @@
+package = dev.lynx.nativehost.openssl
+headers = lynx_ssl.h
+linkerOpts = -lssl -lcrypto

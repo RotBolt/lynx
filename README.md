@@ -69,7 +69,7 @@ lynx db snapshot databases/dummyapp.db \
   --device emulator-5554 --package dev.lynx.dummyapp
 ```
 
-The native executable supports persistent cleartext HTTP/1.1 capture across
+The native executable supports persistent HTTP/1.1 and HTTPS MITM capture across
 independent invocations:
 
 ```bash
@@ -79,9 +79,10 @@ lynx network doctor --json
 lynx network stop --json
 ```
 
-Native HTTPS/TLS, HTTP/2, and WebSocket capture remain under construction 🚧.
-Use the JVM distribution below for those protocols until their native adapters
-are verified.
+The first run creates a CA at `$HOME/.lynx/certs/daemon.pem`; install it in the
+debuggable app/device trust store for HTTPS. Native HTTP/2 and WebSocket capture
+remain under construction 🚧. Use the JVM distribution below for those protocols
+until their native adapters are verified.
 
 ### Network inspector (JVM distribution)
 

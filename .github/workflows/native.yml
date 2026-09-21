@@ -16,6 +16,7 @@ jobs:
           distribution: temurin
           java-version: '21'
       - uses: gradle/actions/setup-gradle@v4
+      - run: HOMEBREW_NO_AUTO_UPDATE=1 brew install openssl@3 || true
       - run: ./gradlew test :core:model:allTests :host:native:macosArm64Test :apps:native-cli:macosArm64Test :apps:native-cli:linkReleaseExecutableMacosArm64 --no-daemon
       - run: |
           mkdir -p dist/lynx-skill
@@ -36,6 +37,7 @@ jobs:
           distribution: temurin
           java-version: '21'
       - uses: gradle/actions/setup-gradle@v4
+      - run: sudo apt-get update && sudo apt-get install -y openssl libssl-dev
       - run: ./gradlew test :core:model:allTests :apps:native-cli:linkReleaseExecutableLinuxX64 --no-daemon
       - name: Run Linux native network smoke test
         shell: bash

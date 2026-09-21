@@ -11,6 +11,7 @@ class PosixNativeNetworkInspector(
     private val store: PosixNativeNetworkStateStore = PosixNativeNetworkStateStore(),
     private val sessions: NativeSessionStore = PosixNativeSessionStore(),
     private val processes: NativeProcessRunner = PosixProcessRunner(),
+    private val certificates: PosixNativeCertificateAuthority = PosixNativeCertificateAuthority(processes),
 ) : NativeNetworkInspector {
     override fun execute(command: NetworkCommand): NetworkCommandResult = when (command) {
         is NetworkCommand.Start -> start(command.settings)
@@ -22,11 +23,14 @@ class PosixNativeNetworkInspector(
     }
 
     private fun capabilities() = NetworkCapabilities(
-        httpsMitm = false,
+        httpsMitm = true,
         supportedProtocols = listOf("HTTP/1.1"),
-        limitations = listOf("HTTPS CONNECT interception is not enabled", "HTTP/2 and WebSocket capture are not enabled"),
+        limitations = listOf("HTTP/2 and WebSocket capture are not enabled"),
         proxyEndpoint = store.endpoint(),
         proxyStatus = if (store.isRunning()) "running" else "stopped",
+        caCertificatePath = "${certificates.ensureCa()}",
+        caFingerprint = certificates.fingerprint(),
+        caTrustStatus = "user_installation_required",
     )
 
     private fun start(settings: NetworkCaptureSettings): NetworkCommandResult.Started {
@@ -82,13 +86,16 @@ class PosixNativeNetworkInspector(
     }
 
     private fun handle(client: Int) {
+        // The listener is non-blocking so stop can observe state; accepted
+        // sockets must be blocking for TLS handshakes and complete bodies.
+        fcntl(client, F_SETFL, fcntl(client, F_GETFL) and O_NONBLOCK.inv())
         val started = getTimeMillis()
         try {
             val raw = readHeaders(client)
             val request = NativeHttpParser.parseRequest(raw)
             val requestId = RequestId("req_${randomId()}")
             if (request.method.equals("CONNECT", true)) {
-                store.append(exchange(request, requestId, null, NetworkFailure("HTTPS_MITM_ERROR", "HTTPS interception is not enabled"), started))
+                handleConnect(client, request.url, requestId, started)
                 return
             }
             val target = parseTarget(request.url, request.headers["Host"] ?: request.headers["host"])
@@ -106,6 +113,36 @@ class PosixNativeNetworkInspector(
         } finally { close(client) }
     }
 
+    private fun handleConnect(client: Int, authority: String, requestId: RequestId, started: Long) {
+        val host = authority.substringBeforeLast(':').ifBlank { authority }
+        val port = authority.substringAfterLast(':', "443").toIntOrNull() ?: 443
+        try {
+            sendBytes(client, "HTTP/1.1 200 Connection Established\r\nProxy-Agent: lynx\r\n\r\n".encodeToByteArray())
+            val leaf = certificates.ensureLeaf(host)
+            val downstream = nativeTlsProvider().server(client, leaf.certificate, leaf.privateKey)
+            val upstreamFd = connect(host, port)
+            val upstream = nativeTlsProvider().client(upstreamFd)
+            try {
+                val raw = readTlsHeaders(downstream)
+                val request = NativeHttpParser.parseRequest(raw)
+                val body = request.body
+                val path = request.url
+                val outbound = buildString {
+                    append(request.method).append(' ').append(path).append(" HTTP/1.1\r\n")
+                    request.headers.filterKeys { !it.equals("Proxy-Connection", true) && !it.equals("Connection", true) }.forEach { (k, v) -> append(k).append(": ").append(v).append("\r\n") }
+                    append("Connection: close\r\n\r\n").append(body)
+                }.encodeToByteArray()
+                upstream.write(outbound)
+                val responseRaw = readTlsUntilClose(upstream)
+                downstream.write(responseRaw.encodeToByteArray())
+                val response = NativeHttpParser.parseResponse(responseRaw)
+                store.append(exchange(request, requestId, response, null, started))
+            } finally { upstream.close(); downstream.close() }
+        } catch (t: Throwable) {
+            store.append(NetworkExchange(EvidenceMeta(EvidenceId("ev_${randomId()}"), SessionId("native"), kotlin.time.Clock.System.now(), EvidenceSource.NETWORK, "native", "unknown", null), requestId, NetworkRequest("CONNECT", "https://$host", emptyMap(), null), null, NetworkFailure("HTTPS_MITM_ERROR", t.message), NetworkTiming(started, getTimeMillis(), getTimeMillis() - started), NetworkCaptureMetadata(false, 0, false), protocol = "HTTPS"))
+        }
+    }
+
     private fun exchange(request: NativeHttpParser.Request, id: RequestId, response: NativeHttpParser.Response?, failure: NetworkFailure?, started: Long) = NetworkExchange(
         meta = EvidenceMeta(EvidenceId("ev_${randomId()}"), SessionId("native"), kotlin.time.Clock.System.now(), EvidenceSource.NETWORK, "native", "unknown", null),
         requestId = id,
@@ -119,8 +156,13 @@ class PosixNativeNetworkInspector(
     private fun failureExchange(client: Int, started: Long, message: String) = exchange(NativeHttpParser.Request("UNKNOWN", "http://unknown", "HTTP/1.1", emptyMap(), ""), RequestId("req_${randomId()}"), null, NetworkFailure("PROXY_ERROR", message), started)
     private fun parseTarget(url: String, host: String?): Pair<String, Int> { val value = if (url.startsWith("http://")) url.removePrefix("http://") else host ?: error("proxy request has no Host header"); val authority = value.substringBefore('/'); val parts = authority.split(':', limit = 2); return parts[0] to (parts.getOrNull(1)?.toIntOrNull() ?: 80) }
     private fun connect(host: String, port: Int): Int = memScoped { val hints = alloc<addrinfo>(); hints.ai_family = AF_UNSPEC; hints.ai_socktype = SOCK_STREAM; val result = allocPointerTo<addrinfo>(); require(getaddrinfo(host, port.toString(), hints.ptr, result.ptr) == 0); val info = result.value ?: error("unable to resolve $host"); val fd = socket(info.pointed.ai_family, info.pointed.ai_socktype, info.pointed.ai_protocol); require(fd >= 0); require(platform.posix.connect(fd, info.pointed.ai_addr, info.pointed.ai_addrlen) == 0); freeaddrinfo(info); fd }
-    private fun readHeaders(fd: Int): String { val bytes = mutableListOf<Byte>(); val buffer = ByteArray(8192); while (bytes.size < 1024 * 1024) { memScoped { val native = allocArray<ByteVar>(buffer.size); val count = recv(fd, native, buffer.size.convert(), 0); if (count <= 0) return bytes.toByteArray().decodeToString(); for (i in 0 until count) bytes += native[i]; }; if (bytes.toByteArray().decodeToString().contains("\r\n\r\n")) break }; return bytes.toByteArray().decodeToString() }
+    /** Read exactly through the header terminator. A bulk recv can consume the
+     * beginning of a TLS ClientHello after CONNECT, so this intentionally reads
+     * one byte at a time at the protocol boundary. */
+    private fun readHeaders(fd: Int): String { val bytes = mutableListOf<Byte>(); while (bytes.size < 1024 * 1024) { memScoped { val native = allocArray<ByteVar>(1); val count = recv(fd, native, 1uL, 0); if (count <= 0) return bytes.toByteArray().decodeToString(); bytes += native[0] }; if (bytes.size >= 4 && bytes.takeLast(4).toByteArray().decodeToString() == "\r\n\r\n") break }; return bytes.toByteArray().decodeToString() }
     private fun readUntilClose(fd: Int): String { val bytes = mutableListOf<Byte>(); memScoped { val buffer = allocArray<ByteVar>(8192); while (true) { val count = recv(fd, buffer, 8192.convert(), 0); if (count <= 0) break; for (i in 0 until count) bytes += buffer[i] } }; return bytes.toByteArray().decodeToString() }
+    private fun readTlsHeaders(connection: NativeTlsConnection): String { val bytes = mutableListOf<Byte>(); while (bytes.size < 1024 * 1024) { val chunk = connection.read() ?: break; bytes += chunk.toList(); if (bytes.toByteArray().decodeToString().contains("\r\n\r\n")) break }; return bytes.toByteArray().decodeToString() }
+    private fun readTlsUntilClose(connection: NativeTlsConnection): String { val bytes = mutableListOf<Byte>(); while (true) { val chunk = connection.read() ?: break; bytes += chunk.toList() }; return bytes.toByteArray().decodeToString() }
     private fun sendBytes(fd: Int, bytes: ByteArray) { bytes.usePinned { send(fd, it.addressOf(0), bytes.size.toULong(), 0) } }
     private fun networkShort(port: Int): UShort = (((port ushr 8) and 0xff) or ((port and 0xff) shl 8)).toUShort()
     private fun randomId() = getTimeMillis().toString(36)

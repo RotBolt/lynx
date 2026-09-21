@@ -1,0 +1,4 @@
+package = dev.lynx.nativehost.openssl
+headers = lynx_ssl.h
+compilerOpts = -I/opt/homebrew/opt/openssl@3/include
+linkerOpts = -L/opt/homebrew/opt/openssl@3/lib -lssl -lcrypto

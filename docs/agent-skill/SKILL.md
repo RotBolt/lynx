@@ -57,7 +57,7 @@ not as proof that the database is unusable.
 
 ## Network investigation
 
-The native executable supports persistent cleartext HTTP/1.1 capture. Start it
+The native executable supports persistent HTTP/1.1 and HTTPS MITM capture. Start it
 in one shell and query it from another:
 
 ```bash
@@ -72,9 +72,11 @@ frames. Capture requires the app to use the Android system proxy and trust the
 Lynx CA for HTTPS; direct/native sockets, certificate pinning, and QUIC/HTTP3
 are reported as limitations rather than silently treated as captured.
 
-The native executable also persists attach state and network evidence. Native
-HTTPS/TLS, HTTP/2, and WebSocket capture are under construction 🚧. For those
-protocols, use the JVM distribution and report the native limitation explicitly.
+The native executable also persists attach state and network evidence. Its first
+network run creates `$HOME/.lynx/certs/daemon.pem`; install that CA in the
+debuggable app/device before HTTPS capture. Native HTTP/2 and WebSocket capture
+are under construction 🚧. For those protocols, use the JVM distribution and
+report the native limitation explicitly.
 
 ## Agent operating rules
 
