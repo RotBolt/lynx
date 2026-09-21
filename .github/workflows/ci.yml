@@ -44,6 +44,11 @@ jobs:
       - uses: android-actions/setup-android@v3
         with:
           packages: platform-tools
+      - name: Enable KVM for the hosted emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
       - name: Build the Android fixture
         run: ./gradlew -p dummyapp :androidApp:assembleDebug --no-daemon
       - name: Launch fixture and verify UI/process/database smoke contract
@@ -55,7 +60,6 @@ jobs:
           # Keep the action's CI-safe software renderer and avoid quick-boot
           # snapshot stalls on headless hosted Linux runners.
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -no-audio -no-boot-anim
-          disable-linux-hw-accel: true
           disable-animations: true
           script: .github/scripts/android-smoke.sh
 
