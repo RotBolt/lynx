@@ -35,6 +35,21 @@ lynx-native db query /tmp/lynx-native-databases_dummyapp.db.db \
   'select * from network_events;' --package dev.lynx.dummyapp
 ```
 
+## iOS Simulator database smoke path
+
+The macOS native binary can resolve the simulator app container through
+`simctl` and inspect the copied SQLite file:
+
+```bash
+lynx-native db ios-list --udid booted --package dev.lynx.dummyapp
+lynx-native db ios-snapshot Documents/dummyapp.db \
+  --udid booted --package dev.lynx.dummyapp
+lynx-native db tables /tmp/lynx-native-ios-Documents_dummyapp.db.db \
+  --package dev.lynx.dummyapp
+lynx-native db query /tmp/lynx-native-ios-Documents_dummyapp.db.db \
+  'select count(*) as count from network_events;' --package dev.lynx.dummyapp
+```
+
 Snapshots are copied through `adb shell run-as`; SQLite inspection is performed
 by the host `sqlite3` command in read-only mode. This native slice intentionally
 does not claim network capture yet. The native proxy, CA lifecycle, HTTP/2, and

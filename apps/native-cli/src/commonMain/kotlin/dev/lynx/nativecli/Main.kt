@@ -47,6 +47,20 @@ class NativeCli(private val runner: NativeProcessRunner) {
                 val sql = args.drop(2).joinToString(" ").ifBlank { error("SQL is required") }
                 printResult(runner.run(listOf("sqlite3", "-readonly", "-json", snapshot, sql)))
             }
+            "ios-list" -> {
+                val udid = option(args, "--udid") ?: error("--udid is required")
+                val root = option(args, "--container") ?: "data"
+                printResult(runner.run(listOf("sh", "-c", "root=\$(xcrun simctl get_app_container ${quote(udid)} ${quote(packageName)} ${quote(root)}); find \"\$root\" -name '*.db' -type f")))
+            }
+            "ios-snapshot" -> {
+                val udid = option(args, "--udid") ?: error("--udid is required")
+                val relative = args.getOrNull(1) ?: error("database path is required")
+                val path = "/tmp/lynx-native-ios-${safeName(relative)}.db"
+                val root = "\$(xcrun simctl get_app_container ${quote(udid)} ${quote(packageName)} data)"
+                val commandLine = "cp \"$root/$relative\" ${quote(path)}"
+                val result = runner.run(listOf("sh", "-c", commandLine))
+                if (result.exitCode == 0) println("OK DB_SNAPSHOT path=$path database=$relative") else printResult(result)
+            }
             else -> error("Usage: lynx db [list|snapshot|tables|query] ...")
         }
     }
