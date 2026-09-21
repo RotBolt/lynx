@@ -12,7 +12,7 @@ timeout 30 adb shell getprop sys.boot_completed | grep -q 1
 APK="dummyapp/androidApp/build/outputs/apk/debug/androidApp-debug.apk"
 timeout 60 adb install -r "$APK"
 timeout 30 adb shell am force-stop dev.lynx.dummyapp
-timeout 30 adb shell am start -n dev.lynx.dummyapp/.MainActivity
+timeout 30 adb shell monkey -p dev.lynx.dummyapp 1 >/dev/null
 sleep 5
 timeout 30 adb shell run-as dev.lynx.dummyapp test -s databases/dummyapp.db
 
