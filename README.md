@@ -27,12 +27,50 @@ or a particular AI vendor.
 - Structured capability, trust, bypass, and unsupported-protocol diagnostics.
 - Android CA staging, iOS Simulator installation, and physical-iOS profile generation.
 
-## Quick start
+## Quick start: use the released executable 🚀
 
-Requirements: macOS, JDK 21, Gradle wrapper, Android SDK platform-tools, and a
-debuggable Android emulator/device or an iOS Simulator. The iOS Simulator
-fixture additionally requires Xcode command-line tools (`xcrun`, `simctl`, and
-the iOS Simulator SDK).
+Download the native `lynx` executable from the
+[latest GitHub release](https://github.com/RotBolt/lynx/releases/latest). No
+repository checkout, Gradle build, JAR, or JVM is needed at runtime. The
+current snapshot provides database inspection and persisted attach state on
+macOS Apple Silicon and Linux x64; Windows support is under construction 🚧.
+
+### macOS Apple Silicon
+
+```bash
+mkdir -p "$HOME/.local/bin"
+curl -fL \
+  https://github.com/RotBolt/lynx/releases/download/v0.1.0-SNAPSHOT/lynx-macos-arm64.tar.gz \
+  -o /tmp/lynx.tar.gz
+tar -xzf /tmp/lynx.tar.gz -C "$HOME/.local/bin"
+chmod +x "$HOME/.local/bin/lynx"
+export PATH="$HOME/.local/bin:$PATH"
+lynx --version
+```
+
+Linux x64 users can substitute `lynx-linux-x64.tar.gz` in the download URL.
+The host must have Android SDK platform-tools (`adb`) on `PATH` for Android
+inspection.
+
+Attach to a debuggable app and inspect its database:
+
+```bash
+lynx devices
+lynx attach emulator-5554 dev.lynx.dummyapp
+lynx status
+lynx db list --device emulator-5554 --package dev.lynx.dummyapp
+lynx db snapshot databases/dummyapp.db \
+  --device emulator-5554 --package dev.lynx.dummyapp
+```
+
+Native network capture is under construction 🚧. Use the JVM distribution below
+for the currently supported network inspector.
+
+### Network inspector (JVM distribution)
+
+The JVM distribution is the supported path for HTTP/1.1, HTTPS CONNECT, HTTP/2,
+and WebSocket capture. It requires macOS, JDK 21, Gradle, platform-tools, and a
+debuggable Android emulator/device or iOS Simulator:
 
 ```bash
 ./gradlew test :apps:cli:installDist --no-daemon
@@ -43,7 +81,6 @@ In another terminal:
 
 ```bash
 LYNX=./apps/cli/build/install/lynx/bin/lynx
-
 $LYNX doctor
 $LYNX devices
 $LYNX attach --device emulator-5554 --package com.example.app --json
@@ -52,36 +89,43 @@ $LYNX network doctor --json
 $LYNX network list --json
 ```
 
-For the verified iOS Simulator workflow, build/install the fixture, attach it
-with the `ios-simulator:` target prefix, and then use the same network and
-database commands:
-
-```bash
-dummyapp/iosApp/build-simulator.sh
-xcrun simctl install <simulator-udid> \
-  dummyapp/iosApp/build/Debug-iphonesimulator/LynxDummyApp.app
-$LYNX attach --device ios-simulator:<simulator-udid> \
-  --package dev.lynx.dummyapp --json
-$LYNX network ca install --ios-simulator <simulator-udid> --json
-$LYNX network start --json
-$LYNX network list --json
-$LYNX db list --json
-$LYNX db snapshot Documents/dummyapp.db --json
-```
-
-The fixture produces one HTTP/1.1 request, one HTTP/2 request, and one
-WebSocket exchange. See the complete [iOS Simulator smoke test](docs/IOS_SMOKE_TEST.md)
-for the build, launch, capture, and query sequence.
-
-The app must be debuggable and must trust the Lynx CA for HTTPS interception.
-Use the onboarding commands when needed:
+The app must be debuggable and trust the Lynx CA for HTTPS interception. Use
+the onboarding commands when needed:
 
 ```bash
 $LYNX network ca show --json
 $LYNX network ca install --android emulator-5554 --json
 $LYNX network ca install --ios-simulator <simulator-udid> --json
-$LYNX network ca install --ios-device physical-device --json
 ```
+
+## Build from source and verify fixtures 🛠️
+
+This section is for contributors and maintainers who want to build Lynx or run
+the deterministic Android/iOS fixture. Regular developers should use the
+released executable above.
+
+Build the native executable locally on macOS Apple Silicon:
+
+```bash
+./gradlew :apps:native-cli:linkReleaseExecutableMacosArm64 --no-daemon
+./apps/native-cli/build/bin/macosArm64/releaseExecutable/lynx.kexe --version
+```
+
+For the complete Android attach, HTTP/2, database, restart, and detach smoke
+test, see [the manual smoke test](lynx-spec/MANUAL_SMOKE_TEST.md). For the
+complete iOS Simulator build/install/capture/query sequence, see the
+[iOS Simulator smoke test](docs/IOS_SMOKE_TEST.md). The short iOS fixture setup
+is:
+
+```bash
+dummyapp/iosApp/build-simulator.sh
+xcrun simctl install <simulator-udid> \
+  dummyapp/iosApp/build/Debug-iphonesimulator/LynxDummyApp.app
+```
+
+The fixture emits HTTP/1.1, HTTP/2, and WebSocket exchanges and stores the
+corresponding evidence in SQLite. Native database smoke commands are documented
+in [native distribution](docs/distribution/native.md).
 
 ## Database workflow 🗄️
 
@@ -160,24 +204,3 @@ Platform unit tests run in the corresponding Android and iOS jobs.
 ## License
 
 Lynx is released under the [Apache License 2.0](LICENSE).
-## Native executable distribution
-
-The developer-facing native deliverable is a standalone Kotlin/Native binary;
-it does not require a JAR or a JVM at runtime. Every push to `main` publishes
-GitHub Actions artifacts for macOS ARM64 and Linux x64 (`lynx`).
-Download the artifact from the workflow run matching the commit you want to
-test, put the binary on `PATH`, and run it directly:
-
-```bash
-lynx --version
-lynx attach emulator-5554 com.example.app
-lynx db list --device emulator-5554 --package com.example.app
-```
-
-The native binary currently provides database inspection and persisted attach
-state. Native network capture is under construction 🚧; the JVM distribution
-remains the supported network inspector until that adapter is ported. Windows
-common code is compiled in CI, while its native runtime adapters remain under
-construction 🚧. See
-[native distribution documentation](docs/distribution/native.md) for artifact
-names, build commands, and platform status.

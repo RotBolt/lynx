@@ -1,12 +1,21 @@
-# Native distribution
+# Native distribution 🚀
+
+The supported developer download is the standalone `lynx` executable attached
+to the [GitHub Releases](https://github.com/RotBolt/lynx/releases) page. These
+archives are intended for users of Lynx; cloning the repository is only needed
+for contributors.
 
 Lynx now has a Kotlin Multiplatform native CLI target graph:
 
 | Target | Artifact | Status |
 |---|---|---|
-| macOS ARM64 | `lynx` | Database inspection available; network adapter under construction 🚧 |
-| Linux x64 | `lynx` | Native build and shared code compile; runtime verification follows CI |
+| macOS ARM64 | `lynx-macos-arm64.tar.gz` | Database inspection available; network adapter under construction 🚧 |
+| Linux x64 | `lynx-linux-x64.tar.gz` | Native build and shared code compile; runtime verification follows CI |
 | Windows x64 | — | Common KMP code compiles; native runtime adapters under construction 🚧 |
+
+Each archive contains a single executable named `lynx`. Install it on
+`PATH` (for example, `$HOME/.local/bin`) and verify it with `lynx --version`.
+SHA-256 checksums are published with each release.
 
 ## Build locally
 
