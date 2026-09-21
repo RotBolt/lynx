@@ -48,5 +48,4 @@ jobs:
           distribution: temurin
           java-version: '21'
       - uses: gradle/actions/setup-gradle@v4
-      - run: .\gradlew.bat :core:model:compileKotlinMingwX64 :apps:native-cli:compileKotlinMingwX64 --no-daemon
-      - run: echo "Windows runtime adapters are under construction 🚧"
+      - run: echo "Windows KMP runtime adapters and MinGW executable are under construction 🚧"
