@@ -160,16 +160,23 @@ Platform unit tests run in the corresponding Android and iOS jobs.
 ## License
 
 Lynx is released under the [Apache License 2.0](LICENSE).
-## Native executable (experimental)
+## Native executable distribution
 
-Lynx is being migrated to Kotlin Multiplatform. The current native macOS ARM64
-binary can inspect Android SQLite databases without a JVM:
+The developer-facing native deliverable is a standalone Kotlin/Native binary;
+it does not require a JAR or a JVM at runtime. Every push to `main` publishes
+GitHub Actions artifacts for macOS ARM64 (`native-cli.kexe`), Linux x64
+(`native-cli.kexe`), and Windows x64 (`native-cli.exe`). Download the artifact
+from the workflow run matching the commit you want to test, put the binary on
+`PATH`, and run it directly:
 
 ```bash
-./gradlew :apps:native-cli:linkReleaseExecutableMacosArm64 --no-daemon
-./apps/native-cli/build/bin/macosArm64/releaseExecutable/native-cli.kexe --version
+lynx-native --version
+lynx-native attach emulator-5554 com.example.app
+lynx-native db list --device emulator-5554 --package com.example.app
 ```
 
-See [native distribution documentation](docs/distribution/native.md). Network
-capture in the native binary is under construction 🚧; use the existing JVM
-distribution for the currently supported network inspector workflow.
+The native binary currently provides database inspection and persisted attach
+state. Native network capture is under construction 🚧; the JVM distribution
+remains the supported network inspector until that adapter is ported. See
+[native distribution documentation](docs/distribution/native.md) for artifact
+names, build commands, and platform status.
