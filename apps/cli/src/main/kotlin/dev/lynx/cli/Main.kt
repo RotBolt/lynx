@@ -189,14 +189,23 @@ private class ManagedNetworkSource(
             val endpoint = AndroidProxyEndpoint.forDevice(target.deviceSerial, config.listenHost, delegate.port)
             lease = controller.apply(endpoint)
         } catch (error: Exception) {
-            delegate.stop()
+            runCatching { delegate.stop() }
             throw error
         }
     }
     override suspend fun stop() {
-        delegate.stop()
-        lease?.let(controller::restore)
-        lease = null
+        var failure: Throwable? = null
+        try {
+            delegate.stop()
+        } catch (error: Throwable) {
+            failure = error
+        } finally {
+            lease?.let {
+                try { controller.restore(it) } catch (error: Throwable) { if (failure == null) failure = error }
+            }
+            lease = null
+        }
+        failure?.let { throw it }
     }
     override fun events(): Flow<NetworkDomainEvent> = delegate.events()
     override suspend fun capabilities(): NetworkCapabilities = delegate.capabilities()

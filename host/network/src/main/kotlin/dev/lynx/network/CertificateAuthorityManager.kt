@@ -34,7 +34,8 @@ data class CertificateAuthorityState(
     val configured: Boolean,
     val fingerprint: String? = null,
     val pemPath: String? = null,
-    val trustStatus: String = if (configured) "not_installed" else "not_created",
+    /** Host-side status only; Android user-trust stores are not readable via public ADB APIs. */
+    val trustStatus: String = if (configured) "unknown" else "not_created",
     val instructions: List<String> = emptyList(),
 )
 
@@ -58,7 +59,7 @@ class CertificateAuthorityManager(
                 configured = true,
                 fingerprint = fingerprint(material.certificate),
                 pemPath = pemPath.toString(),
-                trustStatus = "not_installed",
+                trustStatus = "unknown",
                 instructions = instructions(),
             )
         }.getOrElse { CertificateAuthorityState(false, pemPath = pemPath.toString()) }
