@@ -12,13 +12,16 @@ import java.util.concurrent.ExecutorService
 internal class WebSocketRelayCapture(
     private val executor: ExecutorService,
 ) {
+    data class Result(val frames: List<NetworkFrame>, val failure: Throwable?)
+
     fun relay(
         clientInput: InputStream,
         clientOutput: OutputStream,
         upstreamInput: InputStream,
         upstreamOutput: OutputStream,
-    ): List<NetworkFrame> {
+    ): Result {
         val frames = java.util.Collections.synchronizedList(mutableListOf<NetworkFrame>())
+        val failure = java.util.concurrent.atomic.AtomicReference<Throwable?>(null)
         val done = CountDownLatch(2)
         fun copy(input: InputStream, output: OutputStream, direction: String) {
             try {
@@ -29,12 +32,14 @@ internal class WebSocketRelayCapture(
                     frames += NetworkFrame(direction, frame.opcode, payload(frame.opcode, frame.payload))
                     if (frame.opcode == "CLOSE") break
                 }
+            } catch (error: Throwable) {
+                failure.compareAndSet(null, error)
             } finally { done.countDown() }
         }
         executor.submit { copy(clientInput, upstreamOutput, "CLIENT_TO_SERVER") }
         executor.submit { copy(upstreamInput, clientOutput, "SERVER_TO_CLIENT") }
         done.await()
-        return frames.toList()
+        return Result(frames.toList(), failure.get())
     }
 
     private data class Frame(val raw: ByteArray, val opcode: String, val payload: ByteArray)
@@ -56,7 +61,7 @@ internal class WebSocketRelayCapture(
         } else if (length == 127L) {
             val ext = readExactly(input, 8) ?: return null; raw.write(ext); length = ext.fold(0L) { acc, b -> (acc shl 8) or (b.toInt() and 0xff).toLong() }
         }
-        require(length <= Int.MAX_VALUE) { "WebSocket frame too large" }
+        require(length <= Int.MAX_VALUE) { "Malformed WebSocket frame: payload too large" }
         val mask = if (masked) readExactly(input, 4).also { if (it != null) raw.write(it) } else null
         val payload = readExactly(input, length.toInt()) ?: return null
         raw.write(payload)

@@ -181,6 +181,7 @@ private class ManagedNetworkSource(
 ) : NetworkCaptureSource {
     private val controller = AdbAndroidProxyController(target.deviceSerial)
     private var lease: dev.lynx.network.ProxyLease? = null
+    private var appliedEndpoint: String? = null
     override val endpoint: String? get() = delegate.endpoint
     override val caCertificatePath: String? get() = delegate.caCertificatePath
     override suspend fun start(config: NetworkCaptureConfig) {
@@ -188,8 +189,19 @@ private class ManagedNetworkSource(
         try {
             val endpoint = AndroidProxyEndpoint.forDevice(target.deviceSerial, config.listenHost, delegate.port)
             lease = controller.apply(endpoint)
+            val observed = controller.inspect().rawValue
+            if (observed != endpoint) {
+                throw dev.lynx.network.ProxyControllerException(
+                    "PROXY_NOT_APPLIED",
+                    "Android proxy verification returned ${observed ?: "unset"}; expected $endpoint",
+                )
+            }
+            appliedEndpoint = endpoint
         } catch (error: Exception) {
             runCatching { delegate.stop() }
+            lease?.let { runCatching { controller.restore(it) } }
+            lease = null
+            appliedEndpoint = null
             throw error
         }
     }
@@ -204,11 +216,26 @@ private class ManagedNetworkSource(
                 try { controller.restore(it) } catch (error: Throwable) { if (failure == null) failure = error }
             }
             lease = null
+            appliedEndpoint = null
         }
         failure?.let { throw it }
     }
     override fun events(): Flow<NetworkDomainEvent> = delegate.events()
-    override suspend fun capabilities(): NetworkCapabilities = delegate.capabilities()
+    override suspend fun capabilities(): NetworkCapabilities {
+        val base = delegate.capabilities()
+        val endpoint = appliedEndpoint
+        if (endpoint == null) return base.copy(proxyStatus = "stopped", proxyEndpoint = null)
+        val observed = runCatching { controller.inspect().rawValue }.getOrNull()
+        return base.copy(
+            proxyEndpoint = endpoint,
+            proxyStatus = when (observed) {
+                endpoint -> "configured"
+                null -> "unreachable"
+                else -> "bypassed_or_replaced"
+            },
+            bypassLikely = if (delegate.exchanges().isEmpty()) null else false,
+        )
+    }
     override fun exchanges(): List<NetworkExchange> = delegate.exchanges()
     override fun exchange(requestId: RequestId): NetworkExchange? = delegate.exchange(requestId)
 }

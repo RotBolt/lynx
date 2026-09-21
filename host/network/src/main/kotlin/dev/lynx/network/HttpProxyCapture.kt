@@ -29,7 +29,7 @@ class HttpProxyCapture(
     private val deviceSerial: String,
     private val packageName: String,
     private val processId: Int?,
-) : NetworkCaptureSource {
+) : NetworkCaptureSource, ProxyEngine {
     private val eventsFlow = MutableSharedFlow<NetworkDomainEvent>(extraBufferCapacity = 256)
     private val exchanges = ConcurrentHashMap<RequestId, NetworkExchange>()
     private var executor: ExecutorService = Executors.newCachedThreadPool()
@@ -77,6 +77,8 @@ class HttpProxyCapture(
         caCertificatePath = caPath?.toString(),
         caTrustStatus = tlsMitm.caManager().show().trustStatus,
         supportedProtocols = listOf("HTTP/1.1", "HTTP/2", "WebSocket"),
+        proxyStatus = "running",
+        bypassLikely = null,
         limitations = listOfNotNull("Android apps must trust the Lynx session CA; certificate pinning may fail", caPath?.let { "session CA PEM: $it" }, "HTTP/2 upstream support depends on the destination negotiating h2", "Android system proxy configuration is managed by a separate adapter"),
     )
 
@@ -117,8 +119,9 @@ class HttpProxyCapture(
                     val responseHeaders = parseHeaders(responseLines.drop(1))
                     if (status == 101 && isWebSocketUpgrade(responseHeaders)) {
                         writeUpgradeResponse(output, statusLine, responseHeaders)
-                        val frames = WebSocketRelayCapture(executor).relay(input, output, down, up)
-                        record(id, NetworkExchange(meta(), id, request, NetworkResponse(status, responseHeaders, null), null, timing(started), NetworkCaptureMetadata(false, body.size.toLong(), false), protocol = "WebSocket", frames = frames))
+                        val result = WebSocketRelayCapture(executor).relay(input, output, down, up)
+                        val failure = result.failure?.let { NetworkFailure("WEBSOCKET_PROTOCOL_ERROR", it.message) }
+                        record(id, NetworkExchange(meta(), id, request, NetworkResponse(status, responseHeaders, null), failure, timing(started), NetworkCaptureMetadata(false, body.size.toLong(), false), protocol = "WebSocket", frames = result.frames))
                         eventsFlow.tryEmit(NetworkDomainEvent.Completed(id.value))
                         return
                     }
@@ -175,8 +178,9 @@ class HttpProxyCapture(
                     val responseHeaders = parseHeaders(responseLines.drop(1))
                     if (status == 101 && isWebSocketUpgrade(responseHeaders)) {
                         writeUpgradeResponse(innerOutput, statusLine, responseHeaders)
-                        val frames = WebSocketRelayCapture(executor).relay(input, innerOutput, down, up)
-                        record(id, NetworkExchange(meta(), id, request, NetworkResponse(status, responseHeaders, null), null, timing(started), NetworkCaptureMetadata(true, body.size.toLong(), false), protocol = "WebSocket", frames = frames))
+                        val result = WebSocketRelayCapture(executor).relay(input, innerOutput, down, up)
+                        val failure = result.failure?.let { NetworkFailure("WEBSOCKET_PROTOCOL_ERROR", it.message) }
+                        record(id, NetworkExchange(meta(), id, request, NetworkResponse(status, responseHeaders, null), failure, timing(started), NetworkCaptureMetadata(true, body.size.toLong(), false), protocol = "WebSocket", frames = result.frames))
                         eventsFlow.tryEmit(NetworkDomainEvent.Completed(id.value))
                         return
                     }

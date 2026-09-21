@@ -8,6 +8,7 @@ import java.net.InetSocketAddress
 import java.net.Socket
 import java.net.ServerSocket
 import java.io.ByteArrayOutputStream
+import java.util.zip.GZIPOutputStream
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -43,6 +44,32 @@ class HttpProxyCaptureTest {
             assertEquals("yes", exchange.response?.headers?.entries?.first { it.key.equals("X-Test", true) }?.value)
             assertEquals("world", exchange.response?.body)
             assertEquals(exchange, timeline.network().single())
+        } finally {
+            runBlocking { proxy.stop() }
+            upstream.stop(0)
+        }
+    }
+
+    @Test
+    fun reframesGzipResponseAndStoresDecodedBody() {
+        val upstream = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        upstream.createContext("/gzip") { exchange ->
+            val compressed = ByteArrayOutputStream().also { GZIPOutputStream(it).use { gzip -> gzip.write("decoded".toByteArray()) } }.toByteArray()
+            exchange.responseHeaders.add("Content-Encoding", "gzip")
+            exchange.sendResponseHeaders(200, compressed.size.toLong())
+            exchange.responseBody.use { it.write(compressed) }
+        }
+        upstream.start()
+        val proxy = HttpProxyCapture(InMemoryEvidenceTimeline(), SessionId("s"), "device", "pkg", 1)
+        try {
+            runBlocking { proxy.start(dev.lynx.daemon.NetworkCaptureConfig(listenHost = "127.0.0.1")) }
+            Socket("127.0.0.1", proxy.port).use { socket ->
+                val out = socket.getOutputStream().bufferedWriter()
+                out.write("GET http://127.0.0.1:${upstream.address.port}/gzip HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n")
+                out.flush()
+                socket.getInputStream().readBytes()
+            }
+            assertEquals("decoded", proxy.list().single().response?.body)
         } finally {
             runBlocking { proxy.stop() }
             upstream.stop(0)
