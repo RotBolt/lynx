@@ -99,7 +99,7 @@
 
 - [ ] Document Android emulator, Android device, iOS Simulator, and iOS device flows.
 - [ ] Verify CA onboarding, HTTP/1.1, HTTP/2, WebSocket, trust failures, and cleanup.
-- [ ] Run `./gradlew test :apps:cli:installDist --no-daemon`.
+- [x] Run `./gradlew test :apps:cli:installJvmDist --no-daemon`.
 
 ### Task 7: Android proxy compatibility (terminal-only)
 

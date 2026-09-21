@@ -11,14 +11,14 @@ HTTP/2, and WebSocket traffic, and inspect the fixture's SQLite database.
 ## Prerequisites
 
 - macOS with Xcode command-line tools and a booted iOS Simulator.
-- JDK 21 and the Lynx distribution built with `installDist`.
+- JDK 21 and the JVM compatibility distribution built with `installJvmDist`.
 - A running Lynx daemon in a separate terminal.
 
 Build Lynx and start the daemon:
 
 ```bash
-./gradlew test :apps:cli:installDist --no-daemon
-./apps/cli/build/install/lynx/bin/lynx daemon
+./gradlew test :apps:cli:installJvmDist --no-daemon
+./apps/cli/build/install/cli-jvm/bin/cli daemon
 ```
 
 Select a booted Simulator UDID:
@@ -26,7 +26,7 @@ Select a booted Simulator UDID:
 ```bash
 xcrun simctl list devices | grep Booted
 UDID=<booted-simulator-udid>
-LYNX=./apps/cli/build/install/lynx/bin/lynx
+LYNX=./apps/cli/build/install/cli-jvm/bin/cli
 ```
 
 ## Build, install, and attach

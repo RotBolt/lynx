@@ -26,7 +26,7 @@ jobs:
           java-version: '21'
       - uses: gradle/actions/setup-gradle@v4
       - name: Run host tests and build the CLI distribution
-        run: ./gradlew test :apps:cli:installDist --no-daemon
+        run: ./gradlew test :apps:cli:installJvmDist --no-daemon
 
   android-emulator-smoke:
     name: Android emulator UI/integration smoke test

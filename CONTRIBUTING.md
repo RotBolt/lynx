@@ -14,7 +14,7 @@ should preserve the vendor-neutral CLI contract and the read-only MVP boundary.
 ## Validation
 
 ```bash
-./gradlew test :apps:cli:installDist --no-daemon
+./gradlew test :apps:cli:installJvmDist --no-daemon
 ```
 
 For network/database changes, also run the emulator workflow in

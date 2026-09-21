@@ -32,7 +32,7 @@ Example iOS inspection flow:
 ```bash
 cd dummyapp
 UDID=<booted-simulator-udid>
-LYNX=../apps/cli/build/install/lynx/bin/lynx
+LYNX=lynx
 xcrun simctl boot "$UDID" || true
 ./iosApp/build-simulator.sh
 xcrun simctl install "$UDID" iosApp/build/Debug-iphonesimulator/LynxDummyApp.app

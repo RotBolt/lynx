@@ -29,8 +29,8 @@ SHA-256 checksums are published with each release.
 ## Build locally
 
 ```bash
-./gradlew :apps:native-cli:linkReleaseExecutableMacosArm64 --no-daemon
-./apps/native-cli/build/bin/macosArm64/releaseExecutable/lynx.kexe --version
+./gradlew :apps:cli:linkReleaseExecutableMacosArm64 --no-daemon
+./apps/cli/build/bin/macosArm64/releaseExecutable/lynx.kexe --version
 ```
 
 The native database path uses the host `adb` executable. If it is not on
@@ -38,7 +38,7 @@ The native database path uses the host `adb` executable. If it is not on
 
 ```bash
 ANDROID_HOME="$HOME/Library/Android/sdk" \
-  ./apps/native-cli/build/bin/macosArm64/releaseExecutable/lynx.kexe devices
+  ./apps/cli/build/bin/macosArm64/releaseExecutable/lynx.kexe devices
 ```
 
 The Linux release archive carries the OpenSSL 3 and nghttp2 runtime libraries,

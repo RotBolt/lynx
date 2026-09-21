@@ -16,7 +16,6 @@ rootProject.name = "lynx"
 
 include(":core:model")
 include(":host:native")
-include(":apps:native-cli")
 include(":host:session")
 include(":host:adb")
 include(":host:daemon")

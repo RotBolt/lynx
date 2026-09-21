@@ -8,24 +8,24 @@ Validated on macOS with an Android emulator (`emulator-5554`) and the
 debuggable package `ai.sarvam.prep.app`.
 
 ```bash
-./gradlew test :apps:cli:installDist --no-daemon
-./apps/cli/build/install/lynx/bin/lynx daemon
+./gradlew test :apps:cli:installJvmDist --no-daemon
+./apps/cli/build/install/cli-jvm/bin/cli daemon
 
-./apps/cli/build/install/lynx/bin/lynx attach \
+./apps/cli/build/install/cli-jvm/bin/cli attach \
   --device emulator-5554 --package ai.sarvam.prep.app --json
-./apps/cli/build/install/lynx/bin/lynx network start --json
-./apps/cli/build/install/lynx/bin/lynx network doctor --json
+./apps/cli/build/install/cli-jvm/bin/cli network start --json
+./apps/cli/build/install/cli-jvm/bin/cli network doctor --json
 sleep 18
-./apps/cli/build/install/lynx/bin/lynx network list --json
-./apps/cli/build/install/lynx/bin/lynx network get <request_id> --json
+./apps/cli/build/install/cli-jvm/bin/cli network list --json
+./apps/cli/build/install/cli-jvm/bin/cli network get <request_id> --json
 
-./apps/cli/build/install/lynx/bin/lynx db list --json
-./apps/cli/build/install/lynx/bin/lynx db snapshot databases/conversation.db --json
-./apps/cli/build/install/lynx/bin/lynx db tables --snapshot <snapshot_id> --json
-./apps/cli/build/install/lynx/bin/lynx db schema --snapshot <snapshot_id> --json
-./apps/cli/build/install/lynx/bin/lynx db query --snapshot <snapshot_id> \
+./apps/cli/build/install/cli-jvm/bin/cli db list --json
+./apps/cli/build/install/cli-jvm/bin/cli db snapshot databases/conversation.db --json
+./apps/cli/build/install/cli-jvm/bin/cli db tables --snapshot <snapshot_id> --json
+./apps/cli/build/install/cli-jvm/bin/cli db schema --snapshot <snapshot_id> --json
+./apps/cli/build/install/cli-jvm/bin/cli db query --snapshot <snapshot_id> \
   'SELECT id, role, text FROM messages LIMIT 2' --json
-./apps/cli/build/install/lynx/bin/lynx network stop --json
+./apps/cli/build/install/cli-jvm/bin/cli network stop --json
 ```
 
 Observed results:

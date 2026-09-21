@@ -68,8 +68,8 @@
 **Files:**
 - Create: `host/native/build.gradle.kts`
 - Create: `host/native/src/nativeMain/kotlin/dev/lynx/nativehost/*.kt`
-- Create: `apps/native-cli/build.gradle.kts`
-- Create: `apps/native-cli/src/nativeMain/kotlin/dev/lynx/nativecli/Main.kt`
+- Modify: `apps/cli/build.gradle.kts`
+- Create: `apps/cli/src/nativeMain/kotlin/dev/lynx/nativecli/Main.kt`
 - Create: native tests for ADB discovery and SQLite read-only queries
 - Modify: `settings.gradle.kts`
 
@@ -82,7 +82,7 @@
 - [ ] Implement POSIX process execution and filesystem operations.
 - [ ] Implement SQLite C interop with read-only URI/open flags and row/blob/null conversion.
 - [ ] Implement the native CLI command router and JSONL output.
-- [ ] Build `apps:native-cli:linkReleaseExecutableMacosArm64` and run native tests.
+- [x] Build `apps:cli:linkReleaseExecutableMacosArm64` and run native tests.
 - [ ] Run Android dummy-app DB attach/list/snapshot/tables/query end-to-end and commit.
 
 ### Task 4: Add macOS native network capture
@@ -90,7 +90,7 @@
 **Files:**
 - Create: `host/native/src/nativeMain/kotlin/dev/lynx/nativehost/network/*.kt`
 - Create: native network contract tests and local HTTP/HTTPS fixture tests
-- Modify: `apps/native-cli/src/nativeMain/kotlin/dev/lynx/nativecli/Main.kt`
+- Modify: `apps/cli/src/nativeMain/kotlin/dev/lynx/nativecli/Main.kt`
 
 **Interfaces:**
 - Native proxy implements `ProxyEngine` and emits the same `NetworkExchange` schema.
@@ -107,7 +107,7 @@
 
 **Files:**
 - Modify: `host/native` native source sets
-- Modify: `apps/native-cli/build.gradle.kts`
+- Modify: `apps/cli/build.gradle.kts`
 - Create: `.github/workflows/native-linux.yml`
 - Modify: `README.md`, `docs/` distribution docs
 

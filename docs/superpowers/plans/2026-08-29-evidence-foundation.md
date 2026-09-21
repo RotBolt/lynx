@@ -60,7 +60,7 @@ Verification: `gradle :host:daemon:test --no-daemon`.
 
 Give the daemon a timeline dependency and expose a read-only evidence query boundary without coupling it to ADB or future collectors. Preserve existing attach/status/detach behavior.
 
-Verification: `gradle test :apps:cli:installDist --no-daemon`.
+Verification: `gradle test :apps:cli:installJvmDist --no-daemon`.
 
 ### Task 5: Documentation and smoke verification
 
@@ -70,7 +70,7 @@ Verification: `gradle test :apps:cli:installDist --no-daemon`.
 
 Document the new foundation and the first manual checks for an empty timeline and source capability reporting. Verify all tests and the packaged CLI.
 
-Verification: `gradle test :apps:cli:installDist --no-daemon` and `lynx --version`.
+Verification: `gradle test :apps:cli:installJvmDist --no-daemon` and `lynx --version`.
 
 ## Anti-pattern guards
 

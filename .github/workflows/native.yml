@@ -17,10 +17,10 @@ jobs:
           java-version: '21'
       - uses: gradle/actions/setup-gradle@v4
       - run: HOMEBREW_NO_AUTO_UPDATE=1 brew install openssl@3 libnghttp2 || true
-      - run: ./gradlew test :host:network:jvmTest :core:model:allTests :host:network:macosArm64Test :host:native:macosArm64Test :apps:native-cli:macosArm64Test :apps:native-cli:linkReleaseExecutableMacosArm64 --no-daemon
+      - run: ./gradlew test :host:network:jvmTest :core:model:allTests :host:network:macosArm64Test :host:native:macosArm64Test :apps:cli:macosArm64Test :apps:cli:linkReleaseExecutableMacosArm64 --no-daemon
       - run: |
           mkdir -p dist/lynx-skill
-          cp apps/native-cli/build/bin/macosArm64/releaseExecutable/lynx.kexe dist/lynx
+          cp apps/cli/build/bin/macosArm64/releaseExecutable/lynx.kexe dist/lynx
           SSL_PREFIX="$(brew --prefix openssl@3)"
           H2_PREFIX="$(brew --prefix libnghttp2)"
           cp "$SSL_PREFIX/lib/libssl.3.dylib" "$SSL_PREFIX/lib/libcrypto.3.dylib" dist/
@@ -46,15 +46,15 @@ jobs:
           java-version: '21'
       - uses: gradle/actions/setup-gradle@v4
       - run: sudo apt-get update && sudo apt-get install -y openssl libssl-dev libnghttp2-dev patchelf
-      - run: ./gradlew test :host:network:jvmTest :core:model:allTests :host:network:linuxX64Test :apps:native-cli:linkReleaseExecutableLinuxX64 --no-daemon
+      - run: ./gradlew test :host:network:jvmTest :core:model:allTests :host:network:linuxX64Test :apps:cli:linkReleaseExecutableLinuxX64 --no-daemon
       - name: Run Linux native network smoke test
         shell: bash
         run: |
-          BIN="$PWD/apps/native-cli/build/bin/linuxX64/releaseExecutable/lynx.kexe"
+          BIN="$PWD/apps/cli/build/bin/linuxX64/releaseExecutable/lynx.kexe"
           ./scripts/native-linux-smoke.sh "$BIN"
       - run: |
           mkdir -p dist/lynx-skill
-          cp apps/native-cli/build/bin/linuxX64/releaseExecutable/lynx.kexe dist/lynx
+          cp apps/cli/build/bin/linuxX64/releaseExecutable/lynx.kexe dist/lynx
           cp /usr/lib/x86_64-linux-gnu/libssl.so.3 dist/
           cp /usr/lib/x86_64-linux-gnu/libcrypto.so.3 dist/
           cp /usr/lib/x86_64-linux-gnu/libnghttp2.so.14 dist/

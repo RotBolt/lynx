@@ -26,8 +26,8 @@ The remaining examples in this file use the legacy JVM daemon protocol for
 compatibility testing. Contributors can build it explicitly:
 
 ```bash
-./gradlew test :apps:cli:installDist --no-daemon
-LYNX=./apps/cli/build/install/lynx/bin/lynx
+./gradlew test :apps:cli:installJvmDist --no-daemon
+LYNX=./apps/cli/build/install/cli-jvm/bin/cli
 $LYNX daemon
 ```
 

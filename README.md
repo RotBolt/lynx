@@ -101,14 +101,14 @@ above for HTTP/1.1, HTTPS CONNECT, HTTP/2, and plain WebSocket capture.
 To run the compatibility backend from a source checkout:
 
 ```bash
-./gradlew test :apps:cli:installDist --no-daemon
-./apps/cli/build/install/lynx/bin/lynx daemon
+./gradlew test :apps:cli:installJvmDist --no-daemon
+./apps/cli/build/install/cli-jvm/bin/cli daemon
 ```
 
 In another terminal:
 
 ```bash
-LYNX=./apps/cli/build/install/lynx/bin/lynx
+LYNX=./apps/cli/build/install/cli-jvm/bin/cli
 $LYNX doctor
 $LYNX devices
 $LYNX attach --device emulator-5554 --package com.example.app --json
@@ -135,8 +135,8 @@ released executable above.
 Build the native executable locally on macOS Apple Silicon:
 
 ```bash
-./gradlew :apps:native-cli:linkReleaseExecutableMacosArm64 --no-daemon
-./apps/native-cli/build/bin/macosArm64/releaseExecutable/lynx.kexe --version
+./gradlew :apps:cli:linkReleaseExecutableMacosArm64 --no-daemon
+./apps/cli/build/bin/macosArm64/releaseExecutable/lynx.kexe --version
 ```
 
 For the complete Android attach, HTTP/2, database, restart, and detach smoke
