@@ -42,6 +42,8 @@ jobs:
       - name: Run Android fixture unit tests
         run: ./gradlew -p dummyapp :androidApp:testDebugUnitTest --no-daemon
       - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
       - name: Build the Android fixture
         run: ./gradlew -p dummyapp :androidApp:assembleDebug --no-daemon
       - name: Launch fixture and verify UI/process/database smoke contract
