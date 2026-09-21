@@ -35,11 +35,11 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
     private func runScenario() {
-        let http1 = URL(string: "http://192.168.0.105:8080/health")!
+        let http1 = URL(string: "http://httpbin.org/get")!
         let http2 = URL(string: "https://jsonplaceholder.typicode.com/todos/1")!
         request(http1, kind: "HTTP_1_1")
         request(http2, kind: "HTTP_2")
-        let task = URLSession.shared.webSocketTask(with: URL(string: "ws://192.168.0.105:8080/ws")!)
+        let task = URLSession.shared.webSocketTask(with: URL(string: "wss://ws.postman-echo.com/raw")!)
         task.resume()
         task.send(.string("lynx-dummy-ping")) { [weak self] error in
             if let error {

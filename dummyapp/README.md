@@ -6,14 +6,16 @@ separate from the production Lynx modules.
 Status: 🚧 under construction.
 
 The fixture provides Android and iOS simulator targets and a deterministic
-local HTTP/1.1 + WebSocket server. Start it from this directory with:
+local HTTP/1.1 + WebSocket server for Android. Start it from this directory
+with:
 
 ```bash
 python3 test-server/server.py
 ```
 
-The HTTPS/HTTP/2 call currently uses the public JSONPlaceholder HTTPS endpoint
-until the local TLS test server is added.
+The HTTPS/HTTP/2 call uses JSONPlaceholder. The iOS host uses public HTTP/1.1
+and WebSocket echo endpoints because the simulator bypasses private-address
+proxy traffic.
 
 Build the iOS simulator fixture with `iosApp/build-simulator.sh`; it produces
 an installable `.app` bundle for the booted arm64 simulator.
