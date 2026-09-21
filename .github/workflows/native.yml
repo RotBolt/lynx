@@ -71,6 +71,10 @@ jobs:
           LIST="$($BIN network list --json)"
           printf '%s' "$LIST" | grep -q '"method":"GET"'
           printf '%s' "$LIST" | grep -q '"status":200'
+          CA="$($BIN network ca install --json)"
+          printf '%s' "$CA" | grep -q '"configured":true'
+          printf '%s' "$CA" | grep -q 'user_installation_required'
+          "$BIN" network ca remove --json
           "$BIN" network doctor --json
           "$BIN" network stop --json
       - run: |
