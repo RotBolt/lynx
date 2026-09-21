@@ -5,5 +5,6 @@ out/
 .kotlin/
 local.properties
 lynx-spec-v2.zip
+lynx-spec/CODEX_EXECUTION.md
 *.iml
 .DS_Store
