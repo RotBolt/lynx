@@ -31,7 +31,8 @@ interface NativeNetworkStateStore {
     fun isRunning(): Boolean
     fun endpoint(): String?
     fun capabilities(): dev.lynx.model.NetworkCapabilities?
-    fun setRunning(endpoint: String, capabilities: dev.lynx.model.NetworkCapabilities)
+    fun setRunning(endpoint: String, capabilities: dev.lynx.model.NetworkCapabilities, previousProxy: String? = null)
+    fun previousProxy(): String?
     fun clearRunning()
     fun append(exchange: dev.lynx.model.NetworkExchange)
     fun list(filter: dev.lynx.model.NetworkFilter = dev.lynx.model.NetworkFilter()): List<dev.lynx.model.NetworkExchange>

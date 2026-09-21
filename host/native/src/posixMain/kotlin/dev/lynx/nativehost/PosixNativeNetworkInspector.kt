@@ -9,10 +9,12 @@ import platform.posix.*
 @OptIn(ExperimentalForeignApi::class)
 class PosixNativeNetworkInspector(
     private val store: PosixNativeNetworkStateStore = PosixNativeNetworkStateStore(),
+    private val sessions: NativeSessionStore = PosixNativeSessionStore(),
+    private val processes: NativeProcessRunner = PosixProcessRunner(),
 ) : NativeNetworkInspector {
     override fun execute(command: NetworkCommand): NetworkCommandResult = when (command) {
         is NetworkCommand.Start -> start(command.settings)
-        NetworkCommand.Stop -> { store.clearRunning(); NetworkCommandResult.Stopped }
+        NetworkCommand.Stop -> { restoreDeviceProxy(); store.clearRunning(); NetworkCommandResult.Stopped }
         is NetworkCommand.List -> NetworkCommandResult.Exchanges(store.list(command.filter))
         is NetworkCommand.Get -> store.get(command.requestId)?.let(NetworkCommandResult::Exchange)
             ?: error("network exchange not found: ${command.requestId.value}")
@@ -31,14 +33,29 @@ class PosixNativeNetworkInspector(
         val port = if (settings.listenPort == 0) 62006 else settings.listenPort
         val endpoint = "${settings.listenHost}:$port"
         val caps = capabilities().copy(proxyEndpoint = endpoint, proxyStatus = "starting")
-        store.setRunning(endpoint, caps)
+        val previousProxy = applyDeviceProxy(port)
+        store.setRunning(endpoint, caps, previousProxy)
         // Launch the same native executable as a detached worker. Installers put `lynx` on PATH;
         // tests and embedders can provide LYNX_EXECUTABLE explicitly.
         val executable = getenv("LYNX_EXECUTABLE")?.toKString()?.takeIf(String::isNotBlank) ?: "lynx"
         PosixProcessRunner().run(listOf("sh", "-c", "(nohup '$executable' network worker $port >/dev/null 2>&1 </dev/null &)"))
         val running = caps.copy(proxyStatus = "running")
-        store.setRunning(endpoint, running)
+        store.setRunning(endpoint, running, previousProxy)
         return NetworkCommandResult.Started(endpoint, running)
+    }
+
+    private fun applyDeviceProxy(port: Int): String? {
+        val session = sessions.load() ?: return null
+        val prefix = listOf("adb", "-s", session.deviceSerial, "shell", "settings")
+        val previous = processes.run(prefix + listOf("get", "global", "http_proxy")).stdout.trim().takeIf { it.isNotBlank() && it != "null" }
+        processes.run(prefix + listOf("put", "global", "http_proxy", "10.0.2.2:$port"))
+        return previous
+    }
+
+    private fun restoreDeviceProxy() {
+        val session = sessions.load() ?: return
+        val value = store.previousProxy()?.takeIf { it.isNotBlank() } ?: ":0"
+        processes.run(listOf("adb", "-s", session.deviceSerial, "shell", "settings", "put", "global", "http_proxy", value))
     }
 
     /** Worker entrypoint. It accepts cleartext HTTP proxy requests and appends complete exchanges. */
