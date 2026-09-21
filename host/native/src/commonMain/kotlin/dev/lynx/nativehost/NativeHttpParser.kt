@@ -43,6 +43,16 @@ object NativeHttpParser {
         )
     }
 
+    /** Converts a forward-proxy request line to the origin-form expected upstream. */
+    fun originFormRequest(raw: String, request: Request): String {
+        val lineEnd = raw.indexOf("\r\n")
+        if (lineEnd < 0 || (!request.url.startsWith("http://") && !request.url.startsWith("https://"))) return raw
+        val withoutScheme = request.url.substringAfter("://")
+        val slash = withoutScheme.indexOf('/')
+        val path = if (slash >= 0) withoutScheme.substring(slash) else "/"
+        return "${request.method} $path ${request.version}" + raw.substring(lineEnd)
+    }
+
     private fun split(raw: String): Pair<String, String> {
         val separator = raw.indexOf("\r\n\r\n")
         require(separator >= 0) { "HTTP headers are incomplete" }

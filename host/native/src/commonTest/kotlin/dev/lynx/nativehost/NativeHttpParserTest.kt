@@ -5,6 +5,16 @@ import kotlin.test.assertEquals
 
 class NativeHttpParserTest {
     @Test
+    fun rewritesAbsoluteProxyTargetToOriginForm() {
+        val raw = "GET http://example.test/health?full=1 HTTP/1.1\r\nHost: example.test\r\n\r\n"
+        val request = NativeHttpParser.parseRequest(raw)
+        assertEquals(
+            "GET /health?full=1 HTTP/1.1\r\nHost: example.test\r\n\r\n",
+            NativeHttpParser.originFormRequest(raw, request),
+        )
+    }
+
+    @Test
     fun parsesAbsoluteFormRequestAndBody() {
         val request = NativeHttpParser.parseRequest(
             "POST http://example.test/health HTTP/1.1\r\n" +

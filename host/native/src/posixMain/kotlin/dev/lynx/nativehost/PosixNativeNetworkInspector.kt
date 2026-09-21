@@ -116,7 +116,7 @@ class PosixNativeNetworkInspector(
             try {
                 // A forward proxy receives absolute-form targets, while the origin
                 // server expects origin-form (path + query) request lines.
-                sendBytes(upstream, originFormRequest(raw, request).encodeToByteArray())
+                sendBytes(upstream, NativeHttpParser.originFormRequest(raw, request).encodeToByteArray())
                 val responseHead = readHeaders(upstream)
                 val responseHeadValue = NativeHttpParser.parseResponse(responseHead)
                 if (responseHeadValue.status == 101 && responseHeadValue.headers.keys.any { it.equals("Upgrade", true) }) {
@@ -315,14 +315,6 @@ class PosixNativeNetworkInspector(
     )
 
     private fun failureExchange(client: Int, started: Long, message: String) = exchange(NativeHttpParser.Request("UNKNOWN", "http://unknown", "HTTP/1.1", emptyMap(), ""), RequestId("req_${randomId()}"), null, NetworkFailure("PROXY_ERROR", message), started)
-    private fun originFormRequest(raw: String, request: NativeHttpParser.Request): String {
-        val lineEnd = raw.indexOf("\r\n")
-        if (lineEnd < 0 || !request.url.startsWith("http://") && !request.url.startsWith("https://")) return raw
-        val withoutScheme = request.url.substringAfter("://")
-        val slash = withoutScheme.indexOf('/')
-        val path = if (slash >= 0) withoutScheme.substring(slash) else "/"
-        return "${request.method} $path ${request.version}" + raw.substring(lineEnd)
-    }
     private fun parseTarget(url: String, host: String?): Pair<String, Int> { val value = if (url.startsWith("http://")) url.removePrefix("http://") else host ?: error("proxy request has no Host header"); val authority = value.substringBefore('/'); val parts = authority.split(':', limit = 2); return parts[0] to (parts.getOrNull(1)?.toIntOrNull() ?: 80) }
     private fun connect(host: String, port: Int): Int = memScoped { val hints = alloc<addrinfo>(); hints.ai_family = AF_UNSPEC; hints.ai_socktype = SOCK_STREAM; val result = allocPointerTo<addrinfo>(); require(getaddrinfo(host, port.toString(), hints.ptr, result.ptr) == 0); val info = result.value ?: error("unable to resolve $host"); val fd = socket(info.pointed.ai_family, info.pointed.ai_socktype, info.pointed.ai_protocol); require(fd >= 0); require(platform.posix.connect(fd, info.pointed.ai_addr, info.pointed.ai_addrlen) == 0); freeaddrinfo(info); fd }
     /** Read exactly through the header terminator. A bulk recv can consume the
