@@ -9,7 +9,8 @@ HTTP_PORT=${LYNX_SMOKE_HTTP_PORT:-38133}
 PROXY_PORT=${LYNX_SMOKE_PROXY_PORT:-62006}
 export LYNX_EXECUTABLE="$BIN"
 
-python3 -m http.server "$HTTP_PORT" --bind 127.0.0.1 >"$WORK/http.log" 2>&1 &
+printf 'lynx native smoke fixture\n' >"$WORK/README.md"
+python3 -m http.server "$HTTP_PORT" --bind 127.0.0.1 --directory "$WORK" >"$WORK/http.log" 2>&1 &
 FIXTURE_PID=$!
 cleanup() {
   kill "$FIXTURE_PID" 2>/dev/null || true
