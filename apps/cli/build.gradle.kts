@@ -35,7 +35,6 @@ kotlin {
         val commonMain by getting
         val commonTest by getting
         val jvmMain by getting {
-            kotlin.srcDir("src/main/kotlin")
             dependencies {
                 implementation(project(":core:model"))
                 implementation(project(":host:session"))
@@ -48,7 +47,6 @@ kotlin {
             }
         }
         val jvmTest by getting {
-            kotlin.srcDir("src/test/kotlin")
             dependencies { implementation(kotlin("test")) }
         }
 

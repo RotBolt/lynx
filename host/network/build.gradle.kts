@@ -56,7 +56,6 @@ kotlin {
         }
         // The existing socket/SSLEngine implementation remains a JVM backend.
         val jvmMain by getting {
-            kotlin.srcDir("src/main/kotlin")
             dependencies {
                 implementation(project(":host:daemon"))
                 implementation(project(":host:adb"))
@@ -68,7 +67,6 @@ kotlin {
             }
         }
         val jvmTest by getting {
-            kotlin.srcDir("src/test/kotlin")
             dependencies { implementation(kotlin("test")) }
         }
         val posixMain by creating {
