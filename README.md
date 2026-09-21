@@ -83,11 +83,14 @@ The first run creates a CA at `$HOME/.lynx/certs/daemon.pem`; install it in the
 debuggable app/device trust store for HTTPS. Native HTTP/2 capture is included;
 TLS-WebSocket and QUIC/HTTP3 remain under construction 🚧.
 
-### Network inspector (JVM distribution)
+### JVM compatibility backend
 
-The JVM distribution is the supported path for HTTP/1.1, HTTPS CONNECT, HTTP/2,
-and WebSocket capture. It requires macOS, JDK 21, Gradle, platform-tools, and a
-debuggable Android emulator/device or iOS Simulator:
+The Gradle/JVM distribution remains available for contributors and compatibility
+testing. It is not required by developers or AI agents at runtime, and it is not
+the primary network distribution. Use the standalone native `lynx` executable
+above for HTTP/1.1, HTTPS CONNECT, HTTP/2, and plain WebSocket capture.
+
+To run the compatibility backend from a source checkout:
 
 ```bash
 ./gradlew test :apps:cli:installDist --no-daemon
@@ -106,8 +109,8 @@ $LYNX network doctor --json
 $LYNX network list --json
 ```
 
-The app must be debuggable and trust the Lynx CA for HTTPS interception. Use
-the onboarding commands when needed:
+The app must be debuggable and trust the Lynx CA for HTTPS interception. Use the
+onboarding commands when needed:
 
 ```bash
 $LYNX network ca show --json

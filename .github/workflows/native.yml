@@ -45,13 +45,14 @@ jobs:
           distribution: temurin
           java-version: '21'
       - uses: gradle/actions/setup-gradle@v4
-      - run: sudo apt-get update && sudo apt-get install -y openssl libssl-dev libnghttp2-dev
+      - run: sudo apt-get update && sudo apt-get install -y openssl libssl-dev libnghttp2-dev patchelf
       - run: ./gradlew test :core:model:allTests :apps:native-cli:linkReleaseExecutableLinuxX64 --no-daemon
       - name: Run Linux native network smoke test
         shell: bash
         run: |
           set -euo pipefail
-          BIN="$PWD/apps/native-cli/build/bin/linuxX64/releaseExecutable/native-cli.kexe"
+          BIN="$PWD/apps/native-cli/build/bin/linuxX64/releaseExecutable/lynx.kexe"
+          test -x "$BIN"
           export LYNX_EXECUTABLE="$BIN"
           "$BIN" network doctor --json
           "$BIN" network start --port 62006 --json
@@ -60,8 +61,12 @@ jobs:
       - run: |
           mkdir -p dist/lynx-skill
           cp apps/native-cli/build/bin/linuxX64/releaseExecutable/lynx.kexe dist/lynx
+          cp /usr/lib/x86_64-linux-gnu/libssl.so.3 dist/
+          cp /usr/lib/x86_64-linux-gnu/libcrypto.so.3 dist/
+          cp /usr/lib/x86_64-linux-gnu/libnghttp2.so.14 dist/
+          patchelf --set-rpath '$ORIGIN' dist/lynx
           cp docs/agent-skill/SKILL.md dist/lynx-skill/SKILL.md
-          tar -czf dist/lynx-linux-x64.tar.gz -C dist lynx lynx-skill
+          tar -czf dist/lynx-linux-x64.tar.gz -C dist lynx libssl.so.3 libcrypto.so.3 libnghttp2.so.14 lynx-skill
       - uses: actions/upload-artifact@v4
         with:
           name: lynx-linux-x64

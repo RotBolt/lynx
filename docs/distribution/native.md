@@ -10,7 +10,7 @@ Lynx now has a Kotlin Multiplatform native CLI target graph:
 | Target | Artifact | Status |
 |---|---|---|
 | macOS ARM64 | `lynx-macos-arm64.tar.gz` | Database inspection, HTTP/1.1, HTTPS MITM, HTTP/2, and plain WebSocket capture available; TLS-WebSocket adapter under construction 🚧 |
-| Linux x64 | `lynx-linux-x64.tar.gz` | Native HTTP/1.1, HTTPS MITM, HTTP/2, and plain WebSocket capture; Linux smoke test runs in CI |
+| Linux x64 | `lynx-linux-x64.tar.gz` | Native HTTP/1.1, HTTPS MITM, HTTP/2, and plain WebSocket capture; the archive carries OpenSSL/nghttp2 runtime libraries |
 | Windows x64 | — | Common KMP code compiles; native runtime adapters under construction 🚧 |
 
 Each archive contains the executable named `lynx`, native TLS/HTTP2 runtime libraries,
@@ -35,8 +35,10 @@ ANDROID_HOME="$HOME/Library/Android/sdk" \
   ./apps/native-cli/build/bin/macosArm64/releaseExecutable/lynx.kexe devices
 ```
 
-Linux installations also need the OpenSSL 3 and nghttp2 runtimes (`libssl3`,
-`libcrypto3`, and `libnghttp2-14`); CI installs the development/runtime packages.
+The Linux release archive carries the OpenSSL 3 and nghttp2 runtime libraries,
+so a release install does not require a JVM or a separate native networking
+installation. Building from source on Linux still requires the corresponding
+development packages (`libssl-dev` and `libnghttp2-dev`).
 
 ## Attach session (macOS/Linux native CLI)
 
