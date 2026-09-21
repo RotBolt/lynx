@@ -13,8 +13,10 @@ Lynx now has a Kotlin Multiplatform native CLI target graph:
 | Linux x64 | `lynx-linux-x64.tar.gz` | Native build and shared code compile; runtime verification follows CI |
 | Windows x64 | — | Common KMP code compiles; native runtime adapters under construction 🚧 |
 
-Each archive contains a single executable named `lynx`. Install it on
-`PATH` (for example, `$HOME/.local/bin`) and verify it with `lynx --version`.
+Each archive contains the executable named `lynx` and
+`lynx-skill/SKILL.md`. Install the executable on `PATH` (for example,
+`$HOME/.local/bin`) and point an agent harness at the bundled skill file.
+Verify the executable with `lynx --version`.
 SHA-256 checksums are published with each release.
 
 ## Build locally

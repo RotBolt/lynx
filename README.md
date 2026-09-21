@@ -48,6 +48,12 @@ export PATH="$HOME/.local/bin:$PATH"
 lynx --version
 ```
 
+The archive also installs the vendor-neutral agent instructions at
+`$HOME/.local/bin/lynx-skill/SKILL.md`. Point your agent harness at that file,
+or copy it into the harness's skill directory; it explains the attach,
+database, JSON, and network-evidence workflow without assuming a particular
+editor or model.
+
 Linux x64 users can substitute `lynx-linux-x64.tar.gz` in the download URL.
 The host must have Android SDK platform-tools (`adb`) on `PATH` for Android
 inspection.
