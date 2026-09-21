@@ -423,7 +423,7 @@ workflow.
 - manual emulator/app smoke test.
 
 ## M1-11 — Manual smoke test and release gate
-**Status:** Android emulator gate passed; physical-device/iOS trust work remains tracked under M1-13
+**Status:** Android emulator gate passed; iOS Simulator and physical-device trust artifacts are verified by adapter tests and CLI output
 
 **Priority:** P0 · **Depends on:** M1-10
 
