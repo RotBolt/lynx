@@ -12,7 +12,7 @@ interface NativeTlsConnection {
 }
 
 interface NativeTlsProvider {
-    fun server(clientFd: Int, certificatePath: String, privateKeyPath: String): NativeTlsConnection
+    fun server(clientFd: Int, certificatePath: String, privateKeyPath: String, enableHttp2: Boolean = true): NativeTlsConnection
     fun client(upstreamFd: Int): NativeTlsConnection
 }
 

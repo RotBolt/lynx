@@ -144,9 +144,9 @@ class PosixNativeNetworkInspector(
         try {
             sendBytes(client, "HTTP/1.1 200 Connection Established\r\nProxy-Agent: lynx\r\n\r\n".encodeToByteArray())
             val leaf = certificates.ensureLeaf(host)
-            val downstream = nativeTlsProvider().server(client, leaf.certificate, leaf.privateKey)
             val upstreamFd = connect(host, port)
             val upstream = nativeTlsProvider().client(upstreamFd)
+            val downstream = nativeTlsProvider().server(client, leaf.certificate, leaf.privateKey, enableHttp2 = upstream.applicationProtocol == "h2")
             try {
                 if (downstream.applicationProtocol == "h2" && upstream.applicationProtocol == "h2") {
                     relayTlsHttp2(downstream, upstream, host, requestId, started)

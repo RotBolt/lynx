@@ -25,9 +25,9 @@ private class OpenSslConnection(
 @OptIn(ExperimentalForeignApi::class)
 actual fun nativeTlsProvider(): NativeTlsProvider = object : NativeTlsProvider {
     init { OPENSSL_init_ssl(0u, null) }
-    override fun server(clientFd: Int, certificatePath: String, privateKeyPath: String): NativeTlsConnection = memScoped {
+    override fun server(clientFd: Int, certificatePath: String, privateKeyPath: String, enableHttp2: Boolean): NativeTlsConnection = memScoped {
         val context = SSL_CTX_new(TLS_server_method()) ?: error("unable to create TLS server context")
-        lynx_ssl_enable_h2_server(context)
+        if (enableHttp2) lynx_ssl_enable_h2_server(context)
         require(SSL_CTX_use_certificate_file(context, certificatePath, PEM) == 1)
         require(SSL_CTX_use_PrivateKey_file(context, privateKeyPath, PEM) == 1)
         val ssl = SSL_new(context) ?: error("unable to create TLS server session")
