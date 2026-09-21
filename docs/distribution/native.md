@@ -46,6 +46,13 @@ so a release install does not require a JVM or a separate native networking
 installation. Building from source on Linux still requires the corresponding
 development packages (`libssl-dev` and `libnghttp2-dev`).
 
+After obtaining a Linux binary, run the same executable-level regression used
+by the native workflow:
+
+```bash
+./scripts/native-linux-smoke.sh ./lynx
+```
+
 ## Attach session (macOS/Linux native CLI)
 
 Native attach state is shared by independent invocations through
