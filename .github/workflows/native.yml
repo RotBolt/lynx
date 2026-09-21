@@ -16,7 +16,7 @@ jobs:
           distribution: temurin
           java-version: '21'
       - uses: gradle/actions/setup-gradle@v4
-      - run: ./gradlew test :core:model:allTests :apps:native-cli:linkReleaseExecutableMacosArm64 --no-daemon
+      - run: ./gradlew test :core:model:allTests :host:native:macosArm64Test :apps:native-cli:macosArm64Test :apps:native-cli:linkReleaseExecutableMacosArm64 --no-daemon
       - run: |
           mkdir -p dist/lynx-skill
           cp apps/native-cli/build/bin/macosArm64/releaseExecutable/lynx.kexe dist/lynx
