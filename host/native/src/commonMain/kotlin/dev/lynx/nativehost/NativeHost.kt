@@ -1,6 +1,8 @@
 package dev.lynx.nativehost
 
 import dev.lynx.model.DatabaseId
+import dev.lynx.model.NetworkCommand
+import dev.lynx.model.NetworkCommandResult
 
 data class NativeCommandResult(
     val exitCode: Int,
@@ -19,3 +21,7 @@ interface NativeDatabaseInspector {
     fun query(snapshotPath: String, sql: String): String
 }
 
+/** Platform-neutral boundary used by the native CLI and native proxy adapters. */
+fun interface NativeNetworkInspector {
+    fun execute(command: NetworkCommand): NetworkCommandResult
+}

@@ -1,14 +1,21 @@
 package dev.lynx.model
 
 import kotlinx.datetime.Instant
+import kotlinx.serialization.Serializable
 
+@Serializable
 data class EvidenceId(val value: String)
+@Serializable
 data class RequestId(val value: String)
+@Serializable
 data class SnapshotId(val value: String)
+@Serializable
 data class DatabaseId(val value: String)
 
+@Serializable
 enum class EvidenceSource { NETWORK, DATABASE, RUNTIME }
 
+@Serializable
 data class EvidenceMeta(
     val id: EvidenceId,
     val sessionId: SessionId,
@@ -21,6 +28,7 @@ data class EvidenceMeta(
 
 sealed interface Evidence { val meta: EvidenceMeta }
 
+@Serializable
 data class NetworkRequest(
     val method: String,
     val url: String,
@@ -28,20 +36,24 @@ data class NetworkRequest(
     val body: String?,
 )
 
+@Serializable
 data class NetworkResponse(
     val status: Int,
     val headers: Map<String, String>,
     val body: String?,
 )
 
+@Serializable
 data class NetworkFrame(
     val direction: String,
     val opcode: String,
     val payload: String?,
 )
 
+@Serializable
 data class NetworkFailure(val kind: String, val message: String?)
 
+@Serializable
 data class NetworkTiming(
     val startedAtEpochMillis: Long,
     val completedAtEpochMillis: Long?,
@@ -54,12 +66,14 @@ data class NetworkTiming(
     }
 }
 
+@Serializable
 data class NetworkCaptureMetadata(
     val requestBodyTruncated: Boolean,
     val requestBodyBytes: Long,
     val responseBodyTruncated: Boolean?,
 )
 
+@Serializable
 data class NetworkExchange(
     override val meta: EvidenceMeta,
     val requestId: RequestId,

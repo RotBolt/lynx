@@ -1,5 +1,8 @@
 package dev.lynx.model
 
+import kotlinx.serialization.Serializable
+
+@Serializable
 data class SessionId(val value: String)
 
 enum class SessionStatus {
