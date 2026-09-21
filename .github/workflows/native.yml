@@ -1,0 +1,50 @@
+name: Native distributions
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+
+jobs:
+  macos-arm64:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/setup-gradle@v4
+      - run: ./gradlew test :core:model:allTests :apps:native-cli:linkReleaseExecutableMacosArm64 --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lynx-macos-arm64
+          path: apps/native-cli/build/bin/macosArm64/releaseExecutable/native-cli.kexe
+
+  linux-x64:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/setup-gradle@v4
+      - run: ./gradlew test :core:model:allTests :apps:native-cli:linkReleaseExecutableLinuxX64 --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lynx-linux-x64
+          path: apps/native-cli/build/bin/linuxX64/releaseExecutable/native-cli.kexe
+
+  windows-common:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/setup-gradle@v4
+      - run: .\gradlew.bat test :core:model:allTests :apps:native-cli:compileKotlinMingwX64 --no-daemon
+      - run: echo "Windows native runtime adapters are under construction 🚧"
