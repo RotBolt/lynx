@@ -4,8 +4,8 @@ Lynx now has a Kotlin Multiplatform native CLI target graph:
 
 | Target | Artifact | Status |
 |---|---|---|
-| macOS ARM64 | `lynx.kexe` | Database inspection available; network adapter under construction 🚧 |
-| Linux x64 | `lynx.kexe` | Native build and shared code compile; runtime verification follows CI |
+| macOS ARM64 | `lynx` | Database inspection available; network adapter under construction 🚧 |
+| Linux x64 | `lynx` | Native build and shared code compile; runtime verification follows CI |
 | Windows x64 | — | Common KMP code compiles; native runtime adapters under construction 🚧 |
 
 ## Build locally
