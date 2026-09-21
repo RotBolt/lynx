@@ -17,6 +17,8 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.atomic.AtomicReference
 import java.util.zip.GZIPInputStream
 import java.io.ByteArrayInputStream
 
@@ -136,7 +138,13 @@ class HttpProxyCapture(
             val serverTls = tlsMitm.serverContext(host).socketFactory.createSocket(client, host, targetPort, false) as SSLSocket
             serverTls.use { downstream ->
                 downstream.useClientMode = false
+                setApplicationProtocols(downstream, arrayOf("h2", "http/1.1"))
                 downstream.startHandshake()
+                if (downstream.applicationProtocol == "h2") {
+                    client.soTimeout = 0
+                    handleHttp2(downstream, host, targetPort, id, started)
+                    return
+                }
                 val input = downstream.inputStream.buffered(); val innerOutput = downstream.outputStream.buffered()
                 val raw = readHeaders(input) ?: error("TLS client closed before request")
                 val lines = raw.toString(Charsets.ISO_8859_1).split("\r\n")
@@ -169,6 +177,60 @@ class HttpProxyCapture(
             fail(id, NetworkRequest("CONNECT", "https://$host", emptyMap(), null), started, "HTTPS_MITM_ERROR", error.message ?: "HTTPS interception failed")
         }
         requestHeaders
+    }
+
+    private fun handleHttp2(downstream: SSLSocket, host: String, targetPort: Int, connectId: RequestId, started: Long) {
+        val upstream = (SSLContext.getDefault().socketFactory.createSocket(host, targetPort) as SSLSocket)
+        upstream.use { secure ->
+            setApplicationProtocols(secure, arrayOf("h2", "http/1.1"))
+            secure.startHandshake()
+            if (secure.applicationProtocol != "h2") {
+                fail(connectId, NetworkRequest("CONNECT", "https://$host", emptyMap(), null), started, "HTTP2_UPSTREAM_UNSUPPORTED", "upstream did not negotiate h2")
+                return
+            }
+            val capture = Http2RelayCapture()
+            val failures = AtomicReference<Throwable?>(null)
+            val done = CountDownLatch(2)
+            fun relay(from: java.io.InputStream, to: java.io.OutputStream, requestSide: Boolean) {
+                try {
+                    val buffer = ByteArray(16 * 1024)
+                    while (true) {
+                        val count = from.read(buffer)
+                        if (count < 0) break
+                        if (count == 0) continue
+                        to.write(buffer, 0, count); to.flush()
+                        val bytes = buffer.copyOf(count)
+                        val exchanges = if (requestSide) capture.acceptRequest(bytes) else capture.acceptResponse(bytes)
+                        exchanges.forEach { exchange -> recordHttp2(exchange, started) }
+                    }
+                } catch (error: Throwable) {
+                    failures.compareAndSet(null, IllegalStateException(if (requestSide) "request: ${error.message}" else "response: ${error.message}", error))
+                } finally { done.countDown() }
+            }
+            executor.submit { relay(downstream.inputStream, secure.outputStream, true) }
+            executor.submit { relay(secure.inputStream, downstream.outputStream, false) }
+            done.await()
+            capture.close()
+            failures.get()?.let { error ->
+                fail(connectId, NetworkRequest("CONNECT", "https://$host", emptyMap(), null), started, "HTTP2_RELAY_ERROR", error.message ?: "HTTP/2 relay failed")
+            }
+        }
+    }
+
+    private fun recordHttp2(exchange: Http2RelayCapture.Exchange, started: Long) {
+        val requestId = RequestId("req_${UUID.randomUUID()}")
+        val responseBody = decodeBody(exchange.responseHeaders, exchange.responseBody).text()
+        record(requestId, NetworkExchange(
+            meta(), requestId,
+            NetworkRequest(exchange.method, exchange.url, exchange.requestHeaders, exchange.requestBody.text()),
+            NetworkResponse(exchange.status, exchange.responseHeaders, responseBody),
+            null, timing(started), NetworkCaptureMetadata(false, exchange.requestBody.size.toLong(), false),
+            protocol = "HTTP/2",
+        ))
+    }
+
+    private fun setApplicationProtocols(socket: SSLSocket, protocols: Array<String>) {
+        socket.sslParameters = socket.sslParameters.apply { applicationProtocols = protocols }
     }
 
     private fun record(id: RequestId, exchange: NetworkExchange) { exchanges[id] = exchange; timeline.append(exchange) }
