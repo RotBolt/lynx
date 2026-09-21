@@ -16,7 +16,7 @@ class NativeCli(private val runner: NativeProcessRunner) {
 
     fun run(args: List<String>) {
         when (args.firstOrNull()) {
-            "--version", "version" -> println("lynx-native 0.1.0-SNAPSHOT")
+            "--version", "version" -> println("lynx 0.1.0-SNAPSHOT")
             "devices" -> printResult(runner.run(listOf("adb", "devices")))
             "attach" -> {
                 val device = args.getOrNull(1) ?: error("device is required")

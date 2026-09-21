@@ -4,13 +4,13 @@ plugins {
 
 kotlin {
     macosArm64 {
-        binaries { executable { entryPoint = "dev.lynx.nativecli.main" } }
+        binaries { executable { baseName = "lynx"; entryPoint = "dev.lynx.nativecli.main" } }
     }
     linuxX64 {
-        binaries { executable { entryPoint = "dev.lynx.nativecli.main" } }
+        binaries { executable { baseName = "lynx"; entryPoint = "dev.lynx.nativecli.main" } }
     }
     mingwX64 {
-        binaries { executable { entryPoint = "dev.lynx.nativecli.main" } }
+        binaries { executable { baseName = "lynx"; entryPoint = "dev.lynx.nativecli.main" } }
     }
 
     sourceSets {

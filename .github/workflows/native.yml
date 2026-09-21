@@ -20,7 +20,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: lynx-macos-arm64
-          path: apps/native-cli/build/bin/macosArm64/releaseExecutable/native-cli.kexe
+          path: apps/native-cli/build/bin/macosArm64/releaseExecutable/lynx.kexe
 
   linux-x64:
     runs-on: ubuntu-24.04
@@ -35,7 +35,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: lynx-linux-x64
-          path: apps/native-cli/build/bin/linuxX64/releaseExecutable/native-cli.kexe
+          path: apps/native-cli/build/bin/linuxX64/releaseExecutable/lynx.kexe
 
   windows-common:
     runs-on: windows-2025
