@@ -153,9 +153,9 @@ not part of the current working CLI:
 Every push to `main`, pull request, and manual workflow dispatch runs the host
 unit/integration suite, shared fixture tests, an Android emulator UI/integration
 smoke test, and an iOS Simulator UI/integration smoke test on macOS. Hosted
-runners without an iOS Simulator runtime report a visible warning and skip only
-that platform smoke test; they do not report a false pass. Platform unit tests
-run in the corresponding Android and iOS jobs.
+runners without a compatible iOS Simulator runtime/SDK report a visible warning
+and skip only that platform UI smoke test; they do not report a false pass.
+Platform unit tests run in the corresponding Android and iOS jobs.
 
 ## License
 

@@ -15,6 +15,15 @@ if [[ -z "$DEVICE" ]]; then
   exit 0
 fi
 
+SDK_VERSION="$(xcrun --sdk iphonesimulator --show-sdk-version)"
+SDK_MAJOR="${SDK_VERSION%%.*}"
+SDK_MINOR="${SDK_VERSION#*.}"
+SDK_MINOR="${SDK_MINOR%%.*}"
+if (( SDK_MAJOR < 26 || (SDK_MAJOR == 26 && SDK_MINOR < 4) )); then
+  echo "::warning::iOS Simulator SDK $SDK_VERSION lacks the Apple symbols required by the fixture; UI smoke test skipped."
+  exit 0
+fi
+
 xcrun simctl boot "$DEVICE" >/dev/null 2>&1 || true
 xcrun simctl bootstatus "$DEVICE" -b
 
