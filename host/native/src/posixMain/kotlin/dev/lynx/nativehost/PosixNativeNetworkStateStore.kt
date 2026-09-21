@@ -29,6 +29,7 @@ class PosixNativeNetworkStateStore(
 ) : NativeNetworkStateStore {
     private val statePath get() = "$root/state.json"
     private val evidencePath get() = "$root/exchanges.jsonl"
+    private val readyPath get() = "$root/worker.ready"
 
     override fun isRunning(): Boolean = readState() != null
     override fun endpoint(): String? = readState()?.endpoint
@@ -41,6 +42,16 @@ class PosixNativeNetworkStateStore(
     override fun previousProxy(): String? = readState()?.previousProxy
 
     override fun clearRunning() { remove(statePath) }
+
+    /** Marks the detached worker ready only after its listener has bound successfully. */
+    fun markWorkerReady(port: Int) {
+        ensureRoot()
+        writeText(readyPath, "$port\n")
+    }
+
+    fun workerReady(): Boolean = readText(readyPath)?.trim()?.isNotEmpty() == true
+
+    fun clearWorkerReady() { remove(readyPath) }
 
     override fun append(exchange: NetworkExchange) {
         ensureRoot()

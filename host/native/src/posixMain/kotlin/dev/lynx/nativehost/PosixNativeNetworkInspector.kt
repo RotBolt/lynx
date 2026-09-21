@@ -15,7 +15,7 @@ class PosixNativeNetworkInspector(
 ) : NativeNetworkInspector {
     override fun execute(command: NetworkCommand): NetworkCommandResult = when (command) {
         is NetworkCommand.Start -> start(command.settings)
-        NetworkCommand.Stop -> { restoreDeviceProxy(); store.clearRunning(); NetworkCommandResult.Stopped }
+        NetworkCommand.Stop -> { restoreDeviceProxy(); store.clearRunning(); store.clearWorkerReady(); NetworkCommandResult.Stopped }
         is NetworkCommand.List -> NetworkCommandResult.Exchanges(store.list(command.filter))
         is NetworkCommand.Get -> store.get(command.requestId)?.let(NetworkCommandResult::Exchange)
             ?: error("network exchange not found: ${command.requestId.value}")
@@ -38,14 +38,22 @@ class PosixNativeNetworkInspector(
         val endpoint = "${settings.listenHost}:$port"
         val caps = capabilities().copy(proxyEndpoint = endpoint, proxyStatus = "starting")
         val previousProxy = applyDeviceProxy(port)
+        store.clearWorkerReady()
         store.setRunning(endpoint, caps, previousProxy)
         // Launch the same native executable as a detached worker. Installers put `lynx` on PATH;
         // tests and embedders can provide LYNX_EXECUTABLE explicitly.
         val executable = getenv("LYNX_EXECUTABLE")?.toKString()?.takeIf(String::isNotBlank) ?: "lynx"
         PosixProcessRunner().run(listOf("sh", "-c", "(nohup '$executable' network worker $port >/dev/null 2>&1 </dev/null &)"))
-        val running = caps.copy(proxyStatus = "running")
-        store.setRunning(endpoint, running, previousProxy)
-        return NetworkCommandResult.Started(endpoint, running)
+        repeat(40) {
+            if (store.workerReady()) {
+                val running = caps.copy(proxyStatus = "running")
+                store.setRunning(endpoint, running, previousProxy)
+                return NetworkCommandResult.Started(endpoint, running)
+            }
+            usleep(50_000u)
+        }
+        store.clearRunning()
+        throw IllegalStateException("native network worker did not become ready; install lynx on PATH or set LYNX_EXECUTABLE")
     }
 
     private fun applyDeviceProxy(port: Int): String? {
@@ -78,11 +86,16 @@ class PosixNativeNetworkInspector(
             require(listen(server, 64) == 0) { "unable to listen on native proxy" }
             fcntl(server, F_SETFL, fcntl(server, F_GETFL) or O_NONBLOCK)
         }
-        while (store.isRunning()) {
-            val client = accept(server, null, null)
-            if (client >= 0) handle(client) else usleep(50_000u)
+        store.markWorkerReady(port)
+        try {
+            while (store.isRunning()) {
+                val client = accept(server, null, null)
+                if (client >= 0) handle(client) else usleep(50_000u)
+            }
+        } finally {
+            store.clearWorkerReady()
+            close(server)
         }
-        close(server)
     }
 
     private fun handle(client: Int) {
@@ -101,7 +114,9 @@ class PosixNativeNetworkInspector(
             val target = parseTarget(request.url, request.headers["Host"] ?: request.headers["host"])
             val upstream = connect(target.first, target.second)
             try {
-                sendBytes(upstream, raw.encodeToByteArray())
+                // A forward proxy receives absolute-form targets, while the origin
+                // server expects origin-form (path + query) request lines.
+                sendBytes(upstream, originFormRequest(raw, request).encodeToByteArray())
                 val responseHead = readHeaders(upstream)
                 val responseHeadValue = NativeHttpParser.parseResponse(responseHead)
                 if (responseHeadValue.status == 101 && responseHeadValue.headers.keys.any { it.equals("Upgrade", true) }) {
@@ -300,6 +315,14 @@ class PosixNativeNetworkInspector(
     )
 
     private fun failureExchange(client: Int, started: Long, message: String) = exchange(NativeHttpParser.Request("UNKNOWN", "http://unknown", "HTTP/1.1", emptyMap(), ""), RequestId("req_${randomId()}"), null, NetworkFailure("PROXY_ERROR", message), started)
+    private fun originFormRequest(raw: String, request: NativeHttpParser.Request): String {
+        val lineEnd = raw.indexOf("\r\n")
+        if (lineEnd < 0 || !request.url.startsWith("http://") && !request.url.startsWith("https://")) return raw
+        val withoutScheme = request.url.substringAfter("://")
+        val slash = withoutScheme.indexOf('/')
+        val path = if (slash >= 0) withoutScheme.substring(slash) else "/"
+        return "${request.method} $path ${request.version}" + raw.substring(lineEnd)
+    }
     private fun parseTarget(url: String, host: String?): Pair<String, Int> { val value = if (url.startsWith("http://")) url.removePrefix("http://") else host ?: error("proxy request has no Host header"); val authority = value.substringBefore('/'); val parts = authority.split(':', limit = 2); return parts[0] to (parts.getOrNull(1)?.toIntOrNull() ?: 80) }
     private fun connect(host: String, port: Int): Int = memScoped { val hints = alloc<addrinfo>(); hints.ai_family = AF_UNSPEC; hints.ai_socktype = SOCK_STREAM; val result = allocPointerTo<addrinfo>(); require(getaddrinfo(host, port.toString(), hints.ptr, result.ptr) == 0); val info = result.value ?: error("unable to resolve $host"); val fd = socket(info.pointed.ai_family, info.pointed.ai_socktype, info.pointed.ai_protocol); require(fd >= 0); require(platform.posix.connect(fd, info.pointed.ai_addr, info.pointed.ai_addrlen) == 0); freeaddrinfo(info); fd }
     /** Read exactly through the header terminator. A bulk recv can consume the
