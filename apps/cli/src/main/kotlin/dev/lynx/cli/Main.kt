@@ -107,6 +107,7 @@ private fun runCertificateAuthority(invocation: CliInvocation, json: Boolean) {
             when (invocation.platform) {
                 "android" -> dev.lynx.network.AndroidCertificateInstaller().install(invocation.target, path)
                 "ios-simulator" -> dev.lynx.network.AppleCertificateInstaller().installSimulator(invocation.target, path)
+                "ios-device" -> dev.lynx.network.AppleCertificateInstaller().physicalDeviceInstructions(path)
                 else -> error("Unsupported certificate target: ${invocation.platform}")
             }
         }

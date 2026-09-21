@@ -55,7 +55,7 @@ object CommandLine {
         args.contentEquals(arrayOf("network", "list")) -> CliInvocation.NetworkList
         args.contentEquals(arrayOf("network", "ca", "show")) -> CliInvocation.NetworkCaShow
         args.contentEquals(arrayOf("network", "ca", "install")) -> CliInvocation.NetworkCaInstall
-        args.size == 5 && args[1] == "ca" && args[2] == "install" && args[3] in setOf("--android", "--ios-simulator") -> CliInvocation.NetworkCaInstallTarget(args[3].removePrefix("--"), args[4])
+        args.size == 5 && args[1] == "ca" && args[2] == "install" && args[3] in setOf("--android", "--ios-simulator", "--ios-device") -> CliInvocation.NetworkCaInstallTarget(args[3].removePrefix("--"), args[4])
         args.contentEquals(arrayOf("network", "ca", "remove")) -> CliInvocation.NetworkCaRemove
         args.size == 3 && args[1] == "get" -> CliInvocation.Raw("NETWORK_GET", mapOf("request_id" to args[2]))
         args.contentEquals(arrayOf("network", "watch")) -> CliInvocation.Raw("NETWORK_WATCH")

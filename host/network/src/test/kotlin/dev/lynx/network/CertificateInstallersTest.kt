@@ -3,6 +3,7 @@ package dev.lynx.network
 import dev.lynx.adb.CommandResult
 import dev.lynx.adb.CommandRunner
 import java.nio.file.Path
+import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -32,5 +33,17 @@ class CertificateInstallersTest {
         val result = AppleCertificateInstaller(runner, "xcrun").installSimulator("SIM-1", Path.of("/tmp/lynx-ca.pem"))
         assertEquals("awaiting_user_confirmation", result.status)
         assertEquals(listOf("xcrun", "simctl", "keychain", "SIM-1", "add-root-cert", "/tmp/lynx-ca.pem"), runner.commands.single())
+    }
+
+    @Test
+    fun physicalAppleDeviceGetsInstallableConfigurationProfile() {
+        val directory = Files.createTempDirectory("lynx-ios-profile")
+        val ca = CertificateAuthorityManager(directory).ensure()
+        val result = AppleCertificateInstaller().physicalDeviceInstructions(Path.of(ca.pemPath!!))
+        assertEquals("awaiting_user_confirmation", result.status)
+        assertTrue(result.certificatePath.endsWith("lynx-ca.mobileconfig"))
+        val profile = Files.readString(Path.of(result.certificatePath))
+        assertTrue(profile.contains("com.apple.security.root"))
+        assertTrue(profile.contains("PayloadContent"))
     }
 }

@@ -124,7 +124,7 @@ first network start.
 - `network doctor` reports CA/trust state.
 
 ## M1-13 — Android and Apple certificate installers
-**Status:** In progress
+**Status:** Implemented for Android staging, iOS Simulator installation, and physical-iOS profile generation; trust confirmation remains explicit
 
 **Priority:** P0 · **Depends on:** M1-12
 
@@ -140,9 +140,10 @@ physical iOS profile delivery with explicit user confirmation states.
 - iOS Simulator uses the selected UDID and supports cleanup.
 - Physical iOS reports profile URL/path and required trust confirmation.
 
-Current CLI support includes Android certificate staging/installer launch and
-iOS Simulator `simctl` installation. Physical iOS profile delivery and richer
-trust-state probing remain in progress.
+CLI support includes Android certificate staging/installer launch, iOS Simulator
+`simctl` installation, and physical-iOS `.mobileconfig` profile generation.
+The host cannot inspect a physical device's final user-trust toggle, so that
+state remains explicitly user-confirmed rather than guessed.
 
 ## M1-14 — HTTP/2 proxy capture
 **Status:** Implemented and verified against the emulator Ktor client
