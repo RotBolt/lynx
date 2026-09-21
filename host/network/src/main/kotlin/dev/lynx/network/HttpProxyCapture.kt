@@ -76,7 +76,7 @@ class HttpProxyCapture(
         caFingerprint = tlsMitm.caManager().show().fingerprint,
         caCertificatePath = caPath?.toString(),
         caTrustStatus = tlsMitm.caManager().show().trustStatus,
-        limitations = listOfNotNull("HTTP/1 forwarding only", "Android apps must trust the Lynx session CA; certificate pinning may fail", caPath?.let { "session CA PEM: $it" }, "HTTP/2 and WebSocket capture are not enabled", "Android system proxy configuration is managed by a separate adapter"),
+        limitations = listOfNotNull("Android apps must trust the Lynx session CA; certificate pinning may fail", caPath?.let { "session CA PEM: $it" }, "HTTP/2 upstream support depends on the destination negotiating h2", "Android system proxy configuration is managed by a separate adapter"),
     )
 
     private fun acceptLoop(listener: ServerSocket, config: NetworkCaptureConfig) {
@@ -114,6 +114,13 @@ class HttpProxyCapture(
                     val statusLine = responseLines.firstOrNull() ?: "HTTP/1.1 502 Bad Gateway"
                     val status = responseLines.firstOrNull()?.split(" ")?.getOrNull(1)?.toIntOrNull() ?: 0
                     val responseHeaders = parseHeaders(responseLines.drop(1))
+                    if (status == 101 && isWebSocketUpgrade(responseHeaders)) {
+                        writeUpgradeResponse(output, statusLine, responseHeaders)
+                        val frames = WebSocketRelayCapture(executor).relay(input, output, down, up)
+                        record(id, NetworkExchange(meta(), id, request, NetworkResponse(status, responseHeaders, null), null, timing(started), NetworkCaptureMetadata(false, body.size.toLong(), false), protocol = "WebSocket", frames = frames))
+                        eventsFlow.tryEmit(NetworkDomainEvent.Completed(id.value))
+                        return
+                    }
                     val responseBody = readResponseBody(
                         down,
                         responseHeaders.value("Content-Length")?.toIntOrNull(),
@@ -165,6 +172,13 @@ class HttpProxyCapture(
                     val statusLine = responseLines.firstOrNull() ?: "HTTP/1.1 502 Bad Gateway"
                     val status = responseLines.firstOrNull()?.split(" ")?.getOrNull(1)?.toIntOrNull() ?: 0
                     val responseHeaders = parseHeaders(responseLines.drop(1))
+                    if (status == 101 && isWebSocketUpgrade(responseHeaders)) {
+                        writeUpgradeResponse(innerOutput, statusLine, responseHeaders)
+                        val frames = WebSocketRelayCapture(executor).relay(input, innerOutput, down, up)
+                        record(id, NetworkExchange(meta(), id, request, NetworkResponse(status, responseHeaders, null), null, timing(started), NetworkCaptureMetadata(true, body.size.toLong(), false), protocol = "WebSocket", frames = frames))
+                        eventsFlow.tryEmit(NetworkDomainEvent.Completed(id.value))
+                        return
+                    }
                     val responseBody = readResponseBody(down, responseHeaders.value("Content-Length")?.toIntOrNull(), responseHeaders.value("Transfer-Encoding")?.contains("chunked", true) == true, config.maxBodyBytes)
                     writeResponse(innerOutput, statusLine, responseHeaders, responseBody)
                     val capturedBody = decodeBody(responseHeaders, responseBody)
@@ -256,6 +270,12 @@ class HttpProxyCapture(
             runCatching { GZIPInputStream(ByteArrayInputStream(body)).readBytes() }.getOrDefault(body)
         } else body
     private fun writeError(output: java.io.BufferedOutputStream, status: Int, message: String) { output.write("HTTP/1.1 $status $message\r\nConnection: close\r\nContent-Length: 0\r\n\r\n".toByteArray()); output.flush() }
+    private fun writeUpgradeResponse(output: java.io.BufferedOutputStream, statusLine: String, headers: Map<String, String>) {
+        output.write("$statusLine\r\n".toByteArray())
+        headers.forEach { (k, v) -> output.write("$k: $v\r\n".toByteArray()) }
+        output.write("\r\n".toByteArray()); output.flush()
+    }
+    private fun isWebSocketUpgrade(headers: Map<String, String>): Boolean = headers.value("Upgrade")?.equals("websocket", true) == true
 
     private fun readHeaders(input: BufferedInputStream): ByteArray? {
         val out = ByteArrayOutputStream(); var matched = 0

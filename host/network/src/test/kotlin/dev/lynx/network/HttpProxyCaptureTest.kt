@@ -6,6 +6,8 @@ import dev.lynx.model.RequestId
 import dev.lynx.model.SessionId
 import java.net.InetSocketAddress
 import java.net.Socket
+import java.net.ServerSocket
+import java.io.ByteArrayOutputStream
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -80,5 +82,57 @@ class HttpProxyCaptureTest {
         } finally {
             runBlocking { proxy.stop() }
         }
+    }
+
+    @Test
+    fun capturesWebSocketUpgradeAndFrames() {
+        val upstream = ServerSocket(0)
+        val worker = Thread {
+            upstream.accept().use { socket ->
+                val input = socket.getInputStream()
+                readUntil(input, "\r\n\r\n".toByteArray())
+                socket.getOutputStream().apply {
+                    write("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n".toByteArray())
+                    flush()
+                }
+                readWebSocketFrame(input)
+                socket.getOutputStream().apply { write(byteArrayOf(0x81.toByte(), 0x05, *"hello".toByteArray())); flush() }
+            }
+        }.apply { start() }
+        val proxy = HttpProxyCapture(InMemoryEvidenceTimeline(), SessionId("s"), "device", "pkg", null)
+        try {
+            runBlocking { proxy.start(dev.lynx.daemon.NetworkCaptureConfig(listenHost = "127.0.0.1")) }
+            Socket("127.0.0.1", proxy.port).use { socket ->
+                val input = socket.getInputStream()
+                socket.getOutputStream().apply {
+                    write("GET http://127.0.0.1:${upstream.localPort}/socket HTTP/1.1\r\nHost: 127.0.0.1\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: abc\r\nSec-WebSocket-Version: 13\r\n\r\n".toByteArray()); flush()
+                    readUntil(input, "\r\n\r\n".toByteArray())
+                    write(byteArrayOf(0x81.toByte(), 0x83.toByte(), 1, 2, 3, 4, (104 xor 1).toByte(), (101 xor 2).toByte(), (108 xor 3).toByte())); flush()
+                }
+                input.readNBytes(7)
+            }
+            worker.join(2000)
+            repeat(20) { if (proxy.list().isNotEmpty()) return@repeat; Thread.sleep(50) }
+            val exchange = proxy.list().single()
+            assertEquals("WebSocket", exchange.protocol)
+            assertEquals(2, exchange.frames.count { it.opcode == "TEXT" })
+            assertEquals(setOf("hello", "hel"), exchange.frames.mapNotNull { it.payload }.toSet())
+        } finally {
+            runBlocking { proxy.stop() }
+            upstream.close()
+            worker.join(2000)
+        }
+    }
+
+    private fun readUntil(input: java.io.InputStream, marker: ByteArray): ByteArray {
+        val out = ByteArrayOutputStream()
+        while (out.size() < marker.size || !out.toByteArray().copyOfRange(out.size() - marker.size, out.size()).contentEquals(marker)) { val value = input.read(); if (value < 0) break; out.write(value) }
+        return out.toByteArray()
+    }
+
+    private fun readWebSocketFrame(input: java.io.InputStream) {
+        val header = input.readNBytes(2); val length = header[1].toInt() and 0x7f
+        val mask = input.readNBytes(4); val payload = input.readNBytes(length)
+        for (i in payload.indices) payload[i] = (payload[i].toInt() xor (mask[i % 4].toInt() and 0xff)).toByte()
     }
 }
