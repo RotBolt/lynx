@@ -41,6 +41,7 @@ class DaemonService(
     private var activeTarget: dev.lynx.adb.ResolvedTarget? = null
     private var networkSource: NetworkCaptureSource? = null
     private var databaseSource: DatabaseSource? = null
+    private var detached = false
     fun evidence(filter: EvidenceFilter = EvidenceFilter()): List<Evidence> = timeline.query(filter)
 
     fun handle(command: String): String {
@@ -98,6 +99,7 @@ class DaemonService(
         return runCatching {
             val target = targetResolver.resolve(parts[1].takeUnless { it == "-" }, parts[2])
             activeTarget = target
+            detached = false
             // Re-attaching the same device/package is a reconnect operation,
             // not a new logical session. This keeps the agent-facing session
             // identity stable when an app process is restarted.
@@ -160,6 +162,7 @@ class DaemonService(
     private fun dbTables(parts: List<String>): String = dbTables(parts.getOrNull(1))
     private fun dbTables(snapshotId: String?): String {
         if (snapshotId.isNullOrBlank()) return "ERROR INVALID_ARGUMENTS"
+        if (detached) return "ERROR SESSION_DETACHED Snapshot access ended with the attached session"
         val target = liveTarget() ?: return lastLifecycleError
         val source = databaseSource ?: databaseFactory?.create(target)?.also { databaseSource = it } ?: return "ERROR DATABASE_UNAVAILABLE"
         return runCatching { kotlinx.coroutines.runBlocking { source.tables(dev.lynx.model.SnapshotId(snapshotId)) } }
@@ -168,6 +171,7 @@ class DaemonService(
 
     private fun dbSchema(snapshotId: String?): String {
         if (snapshotId.isNullOrBlank()) return "ERROR INVALID_ARGUMENTS"
+        if (detached) return "ERROR SESSION_DETACHED Snapshot access ended with the attached session"
         val target = liveTarget() ?: return lastLifecycleError
         val source = databaseSource ?: databaseFactory?.create(target)?.also { databaseSource = it } ?: return "ERROR DATABASE_UNAVAILABLE"
         return runCatching { kotlinx.coroutines.runBlocking { source.schema(dev.lynx.model.SnapshotId(snapshotId)) } }
@@ -176,6 +180,7 @@ class DaemonService(
 
     private fun dbQuery(snapshotId: String?, sql: String?): String {
         if (snapshotId.isNullOrBlank() || sql.isNullOrBlank()) return "ERROR INVALID_ARGUMENTS"
+        if (detached) return "ERROR SESSION_DETACHED Snapshot access ended with the attached session"
         val target = liveTarget() ?: return lastLifecycleError
         val source = databaseSource ?: databaseFactory?.create(target)?.also { databaseSource = it } ?: return "ERROR DATABASE_UNAVAILABLE"
         return runCatching { kotlinx.coroutines.runBlocking { source.query(dev.lynx.model.SnapshotId(snapshotId), sql) } }
@@ -205,6 +210,7 @@ class DaemonService(
         } ?: return "ERROR NOT_FOUND"
         if (sessions.get(id) == null) return "ERROR NOT_FOUND"
         sessions.detach(id)
+        detached = true
         networkSource?.let { kotlinx.coroutines.runBlocking { it.stop() } }
         networkSource = null
         databaseSource?.detach()
