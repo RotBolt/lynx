@@ -57,8 +57,8 @@ not as proof that the database is unusable.
 
 ## Network investigation
 
-The JVM distribution is currently the supported network inspector. Start it in
-one shell and query it from another:
+The native executable supports persistent cleartext HTTP/1.1 capture. Start it
+in one shell and query it from another:
 
 ```bash
 lynx network start --json
@@ -72,9 +72,9 @@ frames. Capture requires the app to use the Android system proxy and trust the
 Lynx CA for HTTPS; direct/native sockets, certificate pinning, and QUIC/HTTP3
 are reported as limitations rather than silently treated as captured.
 
-The standalone native executable currently supports database inspection and
-persisted attach state. Native network capture is under construction 🚧; do
-not report it as available merely because the `lynx` binary is installed.
+The native executable also persists attach state and network evidence. Native
+HTTPS/TLS, HTTP/2, and WebSocket capture are under construction 🚧. For those
+protocols, use the JVM distribution and report the native limitation explicitly.
 
 ## Agent operating rules
 

@@ -69,8 +69,19 @@ lynx db snapshot databases/dummyapp.db \
   --device emulator-5554 --package dev.lynx.dummyapp
 ```
 
-Native network capture is under construction 🚧. Use the JVM distribution below
-for the currently supported network inspector.
+The native executable supports persistent cleartext HTTP/1.1 capture across
+independent invocations:
+
+```bash
+lynx network start --json
+lynx network list --json
+lynx network doctor --json
+lynx network stop --json
+```
+
+Native HTTPS/TLS, HTTP/2, and WebSocket capture remain under construction 🚧.
+Use the JVM distribution below for those protocols until their native adapters
+are verified.
 
 ### Network inspector (JVM distribution)
 
