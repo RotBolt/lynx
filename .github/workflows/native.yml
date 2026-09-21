@@ -21,8 +21,13 @@ jobs:
       - run: |
           mkdir -p dist/lynx-skill
           cp apps/native-cli/build/bin/macosArm64/releaseExecutable/lynx.kexe dist/lynx
+          SSL_PREFIX="$(brew --prefix openssl@3)"
+          cp "$SSL_PREFIX/lib/libssl.3.dylib" "$SSL_PREFIX/lib/libcrypto.3.dylib" dist/
+          install_name_tool -change "$SSL_PREFIX/lib/libssl.3.dylib" '@rpath/libssl.3.dylib' dist/lynx
+          install_name_tool -change "$SSL_PREFIX/lib/libcrypto.3.dylib" '@rpath/libcrypto.3.dylib' dist/lynx
+          install_name_tool -add_rpath '@executable_path' dist/lynx
           cp docs/agent-skill/SKILL.md dist/lynx-skill/SKILL.md
-          tar -czf dist/lynx-macos-arm64.tar.gz -C dist lynx lynx-skill
+          tar -czf dist/lynx-macos-arm64.tar.gz -C dist lynx libssl.3.dylib libcrypto.3.dylib lynx-skill
       - uses: actions/upload-artifact@v4
         with:
           name: lynx-macos-arm64

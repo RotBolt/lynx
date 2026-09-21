@@ -13,7 +13,8 @@ Lynx now has a Kotlin Multiplatform native CLI target graph:
 | Linux x64 | `lynx-linux-x64.tar.gz` | Same native HTTP/1.1 + HTTPS path; Linux smoke test runs in CI |
 | Windows x64 | — | Common KMP code compiles; native runtime adapters under construction 🚧 |
 
-Each archive contains the executable named `lynx` and
+Each archive contains the executable named `lynx`, native TLS runtime libraries,
+and
 `lynx-skill/SKILL.md`. Install the executable on `PATH` (for example,
 `$HOME/.local/bin`) and point an agent harness at the bundled skill file.
 Verify the executable with `lynx --version`.
@@ -33,6 +34,9 @@ The native database path uses the host `adb` executable. If it is not on
 ANDROID_HOME="$HOME/Library/Android/sdk" \
   ./apps/native-cli/build/bin/macosArm64/releaseExecutable/lynx.kexe devices
 ```
+
+Linux installations also need the OpenSSL 3 runtime (`libssl3` and
+`libcrypto3`); CI installs these from the distribution packages.
 
 ## Attach session (macOS/Linux native CLI)
 

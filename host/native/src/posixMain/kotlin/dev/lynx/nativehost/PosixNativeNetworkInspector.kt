@@ -24,8 +24,8 @@ class PosixNativeNetworkInspector(
 
     private fun capabilities() = NetworkCapabilities(
         httpsMitm = true,
-        supportedProtocols = listOf("HTTP/1.1"),
-        limitations = listOf("HTTP/2 and WebSocket capture are not enabled"),
+        supportedProtocols = listOf("HTTP/1.1", "HTTPS", "WebSocket"),
+        limitations = listOf("HTTP/2 capture is not enabled", "TLS WebSocket capture is not enabled"),
         proxyEndpoint = store.endpoint(),
         proxyStatus = if (store.isRunning()) "running" else "stopped",
         caCertificatePath = "${certificates.ensureCa()}",
@@ -102,9 +102,17 @@ class PosixNativeNetworkInspector(
             val upstream = connect(target.first, target.second)
             try {
                 sendBytes(upstream, raw.encodeToByteArray())
-                val responseRaw = readUntilClose(upstream)
-                val response = NativeHttpParser.parseResponse(responseRaw)
+                val responseHead = readHeaders(upstream)
+                val responseHeadValue = NativeHttpParser.parseResponse(responseHead)
+                if (responseHeadValue.status == 101 && responseHeadValue.headers.keys.any { it.equals("Upgrade", true) }) {
+                    sendBytes(client, responseHead.encodeToByteArray())
+                    relayPlainWebSocket(client, upstream, request, requestId, responseHeadValue, started)
+                    return
+                }
+                val responseBody = readUntilClose(upstream)
+                val responseRaw = responseHead + responseBody
                 sendBytes(client, responseRaw.encodeToByteArray())
+                val response = responseHeadValue.copy(body = responseBody)
                 store.append(exchange(request, requestId, response, null, started))
             } finally { close(upstream) }
         } catch (t: Throwable) {
@@ -161,6 +169,47 @@ class PosixNativeNetworkInspector(
      * one byte at a time at the protocol boundary. */
     private fun readHeaders(fd: Int): String { val bytes = mutableListOf<Byte>(); while (bytes.size < 1024 * 1024) { memScoped { val native = allocArray<ByteVar>(1); val count = recv(fd, native, 1uL, 0); if (count <= 0) return bytes.toByteArray().decodeToString(); bytes += native[0] }; if (bytes.size >= 4 && bytes.takeLast(4).toByteArray().decodeToString() == "\r\n\r\n") break }; return bytes.toByteArray().decodeToString() }
     private fun readUntilClose(fd: Int): String { val bytes = mutableListOf<Byte>(); memScoped { val buffer = allocArray<ByteVar>(8192); while (true) { val count = recv(fd, buffer, 8192.convert(), 0); if (count <= 0) break; for (i in 0 until count) bytes += buffer[i] } }; return bytes.toByteArray().decodeToString() }
+    private fun relayPlainWebSocket(client: Int, upstream: Int, request: NativeHttpParser.Request, id: RequestId, response: NativeHttpParser.Response, started: Long) {
+        val frames = mutableListOf<NetworkFrame>()
+        memScoped {
+            val pollers = allocArray<pollfd>(2)
+            var openClient = true; var openUpstream = true; val deadline = getTimeMillis() + 15 * 60_000
+            while ((openClient || openUpstream) && getTimeMillis() < deadline) {
+                pollers[0].fd = client; pollers[0].events = POLLIN.toShort(); pollers[0].revents = 0
+                pollers[1].fd = upstream; pollers[1].events = POLLIN.toShort(); pollers[1].revents = 0
+                if (poll(pollers, 2u, 250) < 0) break
+                if (openClient && pollers[0].revents.toInt() and POLLIN != 0) {
+                    val frame = readFrame(client) ?: run { openClient = false; continue }
+                    sendBytes(upstream, frame.bytes); frames += frame.evidence("client_to_server")
+                }
+                if (openUpstream && pollers[1].revents.toInt() and POLLIN != 0) {
+                    val frame = readFrame(upstream) ?: run { openUpstream = false; continue }
+                    sendBytes(client, frame.bytes); frames += frame.evidence("server_to_client")
+                }
+            }
+        }
+        store.append(exchange(request, id, response, null, started).copy(protocol = "WebSocket", frames = frames))
+    }
+
+    private data class WsFrame(val bytes: ByteArray, val direction: String = "") {
+        fun evidence(direction: String): NetworkFrame {
+            val opcode = (bytes.firstOrNull()?.toInt()?.and(0x0f) ?: 0).toString()
+            return NetworkFrame(direction, opcode, bytes.drop(2).toByteArray().decodeToString())
+        }
+    }
+    private fun readFrame(fd: Int): WsFrame? {
+        val header = readExactly(fd, 2) ?: return null
+        val masked = header[1].toInt() and 0x80 != 0; var length = header[1].toInt() and 0x7f
+        val extended = if (length == 126) readExactly(fd, 2) ?: return null else ByteArray(0)
+        if (length == 126) length = (extended[0].toInt() and 0xff) * 256 + (extended[1].toInt() and 0xff)
+        if (length == 127) return null // avoid unbounded native allocations
+        val mask = if (masked) readExactly(fd, 4) ?: return null else ByteArray(0)
+        val payload = readExactly(fd, length) ?: return null
+        if (masked) for (i in payload.indices) payload[i] = (payload[i].toInt() xor mask[i % 4].toInt()).toByte()
+        val frame = header + extended + mask + payload
+        return WsFrame(frame)
+    }
+    private fun readExactly(fd: Int, length: Int): ByteArray? { if (length == 0) return ByteArray(0); val out = ByteArray(length); var offset = 0; while (offset < length) { val count = out.usePinned { recv(fd, it.addressOf(offset), (length - offset).toULong(), 0) }; if (count <= 0) return null; offset += count.toInt() }; return out }
     private fun readTlsHeaders(connection: NativeTlsConnection): String { val bytes = mutableListOf<Byte>(); while (bytes.size < 1024 * 1024) { val chunk = connection.read() ?: break; bytes += chunk.toList(); if (bytes.toByteArray().decodeToString().contains("\r\n\r\n")) break }; return bytes.toByteArray().decodeToString() }
     private fun readTlsUntilClose(connection: NativeTlsConnection): String { val bytes = mutableListOf<Byte>(); while (true) { val chunk = connection.read() ?: break; bytes += chunk.toList() }; return bytes.toByteArray().decodeToString() }
     private fun sendBytes(fd: Int, bytes: ByteArray) { bytes.usePinned { send(fd, it.addressOf(0), bytes.size.toULong(), 0) } }
