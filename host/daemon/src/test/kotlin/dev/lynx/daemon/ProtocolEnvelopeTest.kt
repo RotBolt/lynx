@@ -1,7 +1,7 @@
 package dev.lynx.daemon
 
 import java.nio.file.Files
-import java.time.Instant
+import kotlinx.datetime.Instant
 import dev.lynx.model.*
 import kotlin.test.Test
 import kotlin.test.assertContains

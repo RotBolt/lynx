@@ -1,7 +1,6 @@
 package dev.lynx.model
 
-@JvmInline
-value class SessionId(val value: String)
+data class SessionId(val value: String)
 
 enum class SessionStatus {
     ACTIVE,

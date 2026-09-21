@@ -12,7 +12,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import javax.net.ssl.SSLSocket
 import javax.net.ssl.SSLContext
-import java.time.Instant
+import kotlin.time.Clock
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutorService
@@ -262,7 +262,7 @@ class HttpProxyCapture(
         record(id, NetworkExchange(meta(), id, request, null, NetworkFailure(kind, message), timing(started), NetworkCaptureMetadata(false, request.body?.toByteArray()?.size?.toLong() ?: 0, null)))
         eventsFlow.tryEmit(NetworkDomainEvent.Failed(id.value, message))
     }
-    private fun meta() = EvidenceMeta(EvidenceId("ev_${UUID.randomUUID()}"), sessionId, Instant.now(), EvidenceSource.NETWORK, deviceSerial, packageName, processId)
+    private fun meta() = EvidenceMeta(EvidenceId("ev_${UUID.randomUUID()}"), sessionId, Clock.System.now(), EvidenceSource.NETWORK, deviceSerial, packageName, processId)
     private fun timing(started: Long): NetworkTiming { val now = System.currentTimeMillis(); return NetworkTiming(started, now, now - started) }
     private fun parseHeaders(lines: List<String>) = lines.filter { it.contains(":") }.associate { it.substringBefore(":").trim() to it.substringAfter(":").trim() }
     private fun Map<String, String>.value(name: String): String? = entries.firstOrNull { it.key.equals(name, true) }?.value

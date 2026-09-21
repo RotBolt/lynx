@@ -7,7 +7,7 @@ import dev.lynx.model.DatabaseValue
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import com.google.gson.JsonPrimitive
-import java.time.Instant
+import kotlin.time.Instant
 
 data class DaemonRequest(
     val protocolVersion: Int,

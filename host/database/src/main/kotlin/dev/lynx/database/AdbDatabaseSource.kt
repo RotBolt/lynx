@@ -9,7 +9,7 @@ import dev.lynx.daemon.DatabaseSource
 import dev.lynx.model.*
 import java.nio.file.Files
 import java.nio.file.Path
-import java.time.Instant
+import kotlin.time.Clock
 import java.util.UUID
 import java.security.MessageDigest
 
@@ -67,7 +67,7 @@ class AdbDatabaseSource(
             digest.joinToString("") { "%02x".format(it) },
             listOf(resolvedDatabase.value),
         )
-        val snapshot = DatabaseSnapshot(EvidenceMeta(EvidenceId("ev_${UUID.randomUUID()}"), sessionId, Instant.now(), EvidenceSource.DATABASE, deviceSerial, packageName, processId), SnapshotId(destination.fileName.toString()), resolvedDatabase, sourceFingerprint, destination.toString(), acquisition.consistent, acquisition.method)
+        val snapshot = DatabaseSnapshot(EvidenceMeta(EvidenceId("ev_${UUID.randomUUID()}"), sessionId, Clock.System.now(), EvidenceSource.DATABASE, deviceSerial, packageName, processId), SnapshotId(destination.fileName.toString()), resolvedDatabase, sourceFingerprint, destination.toString(), acquisition.consistent, acquisition.method)
         snapshots.register(snapshot)
         return snapshot
     }

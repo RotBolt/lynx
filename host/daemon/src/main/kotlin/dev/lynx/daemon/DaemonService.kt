@@ -11,7 +11,7 @@ import com.google.gson.GsonBuilder
 import com.google.gson.JsonSerializer
 import com.google.gson.JsonPrimitive
 import dev.lynx.model.DatabaseValue
-import java.time.Instant
+import kotlin.time.Instant
 
 /**
  * Small line-oriented control surface for the future local Unix-socket daemon.

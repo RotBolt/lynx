@@ -1,11 +1,11 @@
 package dev.lynx.model
 
-import java.time.Instant
+import kotlinx.datetime.Instant
 
-@JvmInline value class EvidenceId(val value: String)
-@JvmInline value class RequestId(val value: String)
-@JvmInline value class SnapshotId(val value: String)
-@JvmInline value class DatabaseId(val value: String)
+data class EvidenceId(val value: String)
+data class RequestId(val value: String)
+data class SnapshotId(val value: String)
+data class DatabaseId(val value: String)
 
 enum class EvidenceSource { NETWORK, DATABASE, RUNTIME }
 

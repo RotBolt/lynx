@@ -13,7 +13,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.sql.DriverManager
 import java.time.Duration
-import java.time.Instant
+import kotlinx.datetime.Instant
 import kotlin.io.path.deleteIfExists
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -157,7 +157,7 @@ class SqliteDatabaseInspectorTest {
     }
 
     private fun snapshot(path: Path) = DatabaseSnapshot(
-        meta = EvidenceMeta(EvidenceId("evidence-1"), SessionId("session-1"), Instant.EPOCH, EvidenceSource.DATABASE, "emulator-5554", "com.example.app", 123),
+        meta = EvidenceMeta(EvidenceId("evidence-1"), SessionId("session-1"), Instant.fromEpochMilliseconds(0), EvidenceSource.DATABASE, "emulator-5554", "com.example.app", 123),
         snapshotId = SnapshotId("snapshot-1"),
         databaseId = DatabaseId("databases/app.db"),
         sourceFingerprint = DatabaseFingerprint("fingerprint", listOf("databases/app.db")),

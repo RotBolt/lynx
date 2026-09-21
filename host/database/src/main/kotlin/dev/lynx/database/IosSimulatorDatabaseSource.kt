@@ -9,7 +9,7 @@ import dev.lynx.model.*
 import java.nio.file.Files
 import java.nio.file.Path
 import java.security.MessageDigest
-import java.time.Instant
+import kotlin.time.Clock
 import java.util.UUID
 
 /** Read-only SQLite access to an iOS Simulator app container. */
@@ -50,7 +50,7 @@ class IosSimulatorDatabaseSource(
         copySidecar(source, destination, "-wal")
         copySidecar(source, destination, "-shm")
         val snapshot = DatabaseSnapshot(
-            EvidenceMeta(EvidenceId("ev_${UUID.randomUUID()}"), sessionId, Instant.now(), EvidenceSource.DATABASE, "ios-simulator:$udid", bundleId, null),
+            EvidenceMeta(EvidenceId("ev_${UUID.randomUUID()}"), sessionId, Clock.System.now(), EvidenceSource.DATABASE, "ios-simulator:$udid", bundleId, null),
             SnapshotId(destination.fileName.toString()), database, DatabaseFingerprint(digest(destination), listOf(database.value)), destination.toString(), false,
             "simctl app-container copy; WAL/SHM copied independently",
         )

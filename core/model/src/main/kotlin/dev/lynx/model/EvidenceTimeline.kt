@@ -1,6 +1,6 @@
 package dev.lynx.model
 
-import java.time.Instant
+import kotlinx.datetime.Instant
 
 data class EvidenceFilter(
     val sessionId: SessionId? = null,
@@ -32,16 +32,16 @@ class InMemoryEvidenceTimeline(private val maxItems: Int = 10_000) : EvidenceTim
     init { require(maxItems > 0) { "maxItems must be positive" } }
     private val items = ArrayDeque<Evidence>()
 
-    @Synchronized override fun append(evidence: Evidence) {
+    override fun append(evidence: Evidence) {
         items.addLast(evidence)
         while (items.size > maxItems) items.removeFirst()
     }
 
-    @Synchronized override fun query(filter: EvidenceFilter): List<Evidence> = items.asSequence()
+    override fun query(filter: EvidenceFilter): List<Evidence> = items.asSequence()
         .filter { filter.sessionId == null || it.meta.sessionId == filter.sessionId }
         .filter { filter.source == null || it.meta.source == filter.source }
-        .filter { filter.from == null || !it.meta.observedAt.isBefore(filter.from) }
-        .filter { filter.to == null || !it.meta.observedAt.isAfter(filter.to) }
+        .filter { filter.from == null || it.meta.observedAt >= filter.from }
+        .filter { filter.to == null || it.meta.observedAt <= filter.to }
         .sortedByDescending { it.meta.observedAt }
         .let { sequence -> if (filter.limit == null) sequence.toList() else sequence.take(filter.limit).toList() }
 

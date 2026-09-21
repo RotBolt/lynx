@@ -5,6 +5,7 @@ dependencies {
     implementation(project(":host:daemon"))
     implementation(project(":host:adb"))
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
+    implementation("org.jetbrains.kotlinx:kotlinx-datetime:0.7.1")
     // Bouncy Castle provides portable certificate generation for the local TLS MITM.
     implementation("org.bouncycastle:bcprov-jdk18on:1.78.1")
     implementation("org.bouncycastle:bcpkix-jdk18on:1.78.1")

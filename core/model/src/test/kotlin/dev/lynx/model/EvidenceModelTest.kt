@@ -1,6 +1,6 @@
 package dev.lynx.model
 
-import java.time.Instant
+import kotlinx.datetime.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
 

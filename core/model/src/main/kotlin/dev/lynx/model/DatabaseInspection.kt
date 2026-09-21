@@ -1,10 +1,31 @@
 package dev.lynx.model
 
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonClassDiscriminator
+
+@OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+@Serializable
+@JsonClassDiscriminator("kind")
 sealed interface DatabaseValue {
+    @Serializable
+    @SerialName("null")
     data object NullValue : DatabaseValue
+
+    @Serializable
+    @SerialName("integer")
     data class IntegerValue(val value: Long) : DatabaseValue
+
+    @Serializable
+    @SerialName("real")
     data class RealValue(val value: Double) : DatabaseValue
+
+    @Serializable
+    @SerialName("text")
     data class TextValue(val value: String) : DatabaseValue
+
+    @Serializable
+    @SerialName("blob")
     data class BlobValue(
         val data: String,
         val encoding: String = "base64",
