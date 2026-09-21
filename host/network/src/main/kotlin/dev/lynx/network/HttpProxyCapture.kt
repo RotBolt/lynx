@@ -71,7 +71,7 @@ class HttpProxyCapture(
         executor.shutdownNow()
     }
     override fun events(): Flow<NetworkDomainEvent> = eventsFlow
-    override suspend fun capabilities() = NetworkCapabilities(
+    override suspend fun capabilities() = dev.lynx.daemon.NetworkCapabilities(
         httpsMitm = true, maxBodyBytes = 0,
         caFingerprint = tlsMitm.caManager().show().fingerprint,
         caCertificatePath = caPath?.toString(),
