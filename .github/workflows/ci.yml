@@ -52,7 +52,10 @@ jobs:
           api-level: 35
           arch: x86_64
           profile: pixel_2
-          emulator-options: -no-window -no-audio -no-boot-anim
+          # Keep the action's CI-safe software renderer and avoid quick-boot
+          # snapshot stalls on headless hosted Linux runners.
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -no-audio -no-boot-anim
+          disable-linux-hw-accel: true
           disable-animations: true
           script: .github/scripts/android-smoke.sh
 
