@@ -164,10 +164,9 @@ Lynx is released under the [Apache License 2.0](LICENSE).
 
 The developer-facing native deliverable is a standalone Kotlin/Native binary;
 it does not require a JAR or a JVM at runtime. Every push to `main` publishes
-GitHub Actions artifacts for macOS ARM64 (`native-cli.kexe`), Linux x64
-(`native-cli.kexe`), and Windows x64 (`native-cli.exe`). Download the artifact
-from the workflow run matching the commit you want to test, put the binary on
-`PATH`, and run it directly:
+GitHub Actions artifacts for macOS ARM64 and Linux x64 (`native-cli.kexe`).
+Download the artifact from the workflow run matching the commit you want to
+test, put the binary on `PATH`, and run it directly:
 
 ```bash
 lynx-native --version
@@ -177,6 +176,8 @@ lynx-native db list --device emulator-5554 --package com.example.app
 
 The native binary currently provides database inspection and persisted attach
 state. Native network capture is under construction 🚧; the JVM distribution
-remains the supported network inspector until that adapter is ported. See
+remains the supported network inspector until that adapter is ported. Windows
+common code is compiled in CI, while its native runtime adapters remain under
+construction 🚧. See
 [native distribution documentation](docs/distribution/native.md) for artifact
 names, build commands, and platform status.

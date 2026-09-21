@@ -6,7 +6,7 @@ Lynx now has a Kotlin Multiplatform native CLI target graph:
 |---|---|---|
 | macOS ARM64 | `native-cli.kexe` | Database inspection available; network adapter under construction 🚧 |
 | Linux x64 | `native-cli.kexe` | Native build and shared code compile; runtime verification follows CI |
-| Windows x64 | `native-cli.exe` | Native executable published; platform adapters under construction 🚧 |
+| Windows x64 | — | Common KMP code compiles; native runtime adapters under construction 🚧 |
 
 ## Build locally
 
@@ -34,8 +34,8 @@ lynx-native status
 lynx-native detach
 ```
 
-The Windows executable is distributed for common CLI compatibility, while its
-host adapters remain under construction 🚧.
+Windows common code is compiled in CI, while its native runtime adapters remain
+under construction 🚧.
 
 ## Android database smoke path
 
