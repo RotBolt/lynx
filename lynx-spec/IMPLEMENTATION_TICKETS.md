@@ -388,7 +388,7 @@ human-readable text.
 - BLOB and NULL serialization.
 
 ## M1-10 — End-to-end attach/debug workflow
-**Status:** Implemented for attach/network/database workflow; manual gate pending
+**Status:** Implemented and verified across independent CLI invocations, app PID restart, and detach cleanup
 
 **Priority:** P0 · **Depends on:** M1-02 through M1-09
 
@@ -422,7 +422,7 @@ workflow.
 - manual emulator/app smoke test.
 
 ## M1-11 — Manual smoke test and release gate
-**Status:** Pending manual emulator/device gate
+**Status:** Android emulator gate passed; physical-device/iOS trust work remains tracked under M1-13
 
 **Priority:** P0 · **Depends on:** M1-10
 
