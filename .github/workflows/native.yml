@@ -50,33 +50,8 @@ jobs:
       - name: Run Linux native network smoke test
         shell: bash
         run: |
-          set -euo pipefail
           BIN="$PWD/apps/native-cli/build/bin/linuxX64/releaseExecutable/lynx.kexe"
-          test -x "$BIN"
-          export LYNX_EXECUTABLE="$BIN"
-          python3 -m http.server 38133 --bind 127.0.0.1 >/tmp/lynx-linux-http.log 2>&1 &
-          FIXTURE_PID=$!
-          trap 'kill "$FIXTURE_PID" 2>/dev/null || true; "$BIN" network stop --json >/dev/null 2>&1 || true' EXIT
-          "$BIN" network start --port 62006 --json
-          for attempt in $(seq 1 20); do
-            if curl --silent --show-error --noproxy '' \
-              -x http://127.0.0.1:62006 \
-              http://127.0.0.1:38133/README.md \
-              -o /tmp/lynx-linux-http-body -w '%{http_code}' >/tmp/lynx-linux-http-status; then
-              break
-            fi
-            sleep 0.2
-          done
-          test "$(cat /tmp/lynx-linux-http-status)" = 200
-          LIST="$($BIN network list --json)"
-          printf '%s' "$LIST" | grep -q '"method":"GET"'
-          printf '%s' "$LIST" | grep -q '"status":200'
-          CA="$($BIN network ca install --json)"
-          printf '%s' "$CA" | grep -q '"configured":true'
-          printf '%s' "$CA" | grep -q 'user_installation_required'
-          "$BIN" network ca remove --json
-          "$BIN" network doctor --json
-          "$BIN" network stop --json
+          ./scripts/native-linux-smoke.sh "$BIN"
       - run: |
           mkdir -p dist/lynx-skill
           cp apps/native-cli/build/bin/linuxX64/releaseExecutable/lynx.kexe dist/lynx
