@@ -74,8 +74,8 @@ are reported as limitations rather than silently treated as captured.
 
 The native executable also persists attach state and network evidence. Its first
 network run creates `$HOME/.lynx/certs/daemon.pem`; install that CA in the
-debuggable app/device before HTTPS capture. Native HTTP/2 and WebSocket capture
-are under construction 🚧. For those protocols, use the JVM distribution and
+debuggable app/device before HTTPS capture. Native HTTP/2 and TLS-WebSocket capture
+are under construction 🚧. For those protocol variants, use the JVM distribution and
 report the native limitation explicitly.
 
 ## Agent operating rules

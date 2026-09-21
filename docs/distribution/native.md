@@ -9,7 +9,7 @@ Lynx now has a Kotlin Multiplatform native CLI target graph:
 
 | Target | Artifact | Status |
 |---|---|---|
-| macOS ARM64 | `lynx-macos-arm64.tar.gz` | Database inspection and persistent HTTP/1.1 + HTTPS MITM capture available; HTTP/2/WebSocket adapters under construction 🚧 |
+| macOS ARM64 | `lynx-macos-arm64.tar.gz` | Database inspection, HTTP/1.1, HTTPS MITM, and plain WebSocket capture available; HTTP/2/TLS-WebSocket adapters under construction 🚧 |
 | Linux x64 | `lynx-linux-x64.tar.gz` | Same native HTTP/1.1 + HTTPS path; Linux smoke test runs in CI |
 | Windows x64 | — | Common KMP code compiles; native runtime adapters under construction 🚧 |
 
@@ -85,6 +85,6 @@ by the host `sqlite3` command in read-only mode. Native `network start`, `stop`,
 invocations. The native proxy forwards and records cleartext HTTP/1.1 and HTTPS
 CONNECT traffic using the host OpenSSL runtime. The first run creates a CA under
 `$HOME/.lynx/certs`; install `daemon.pem` in the debug app/device trust store.
-Native HTTP/2 and WebSocket adapters remain under construction 🚧; the JVM CLI
-remains the regression oracle for those protocols until their native adapters
-are verified.
+Native HTTP/2 and TLS-WebSocket adapters remain under construction 🚧; the JVM
+CLI remains the regression oracle for those protocol variants until their native
+adapters are verified.
