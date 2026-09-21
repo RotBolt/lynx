@@ -51,6 +51,32 @@ class HttpProxyCaptureTest {
     }
 
     @Test
+    fun mapsAndroidEmulatorHostAliasToTheHostLoopbackForUpstreamRequests() {
+        val upstream = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        upstream.createContext("/health") { exchange ->
+            val bytes = "healthy".toByteArray()
+            exchange.sendResponseHeaders(200, bytes.size.toLong())
+            exchange.responseBody.use { it.write(bytes) }
+        }
+        upstream.start()
+        val proxy = HttpProxyCapture(InMemoryEvidenceTimeline(), SessionId("s"), "emulator-5554", "pkg", 1)
+        try {
+            runBlocking { proxy.start(dev.lynx.daemon.NetworkCaptureConfig(listenHost = "127.0.0.1")) }
+            Socket("127.0.0.1", proxy.port).use { socket ->
+                socket.getOutputStream().bufferedWriter().use { out ->
+                    out.write("GET http://10.0.2.2:${upstream.address.port}/health HTTP/1.1\r\nHost: 10.0.2.2\r\nConnection: close\r\n\r\n")
+                    out.flush()
+                    socket.getInputStream().readBytes()
+                }
+            }
+            assertEquals("healthy", proxy.list().single().response?.body)
+        } finally {
+            runBlocking { proxy.stop() }
+            upstream.stop(0)
+        }
+    }
+
+    @Test
     fun reframesGzipResponseAndStoresDecodedBody() {
         val upstream = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
         upstream.createContext("/gzip") { exchange ->

@@ -106,7 +106,7 @@ class HttpProxyCapture(
             if (host == null) { writeError(output, 400, "absolute URL or Host header required"); fail(id, request, started, "INVALID_REQUEST", "absolute URL or Host header required"); return }
             val targetPort = uri?.port?.takeIf { it > 0 } ?: 80
             runCatching {
-                Socket(host, targetPort).use { upstream ->
+                Socket(upstreamHost(host), targetPort).use { upstream ->
                     val up = upstream.getOutputStream().buffered(); val down = upstream.getInputStream().buffered()
                     val path = ((uri?.rawPath ?: "/").ifEmpty { "/" }) + (uri?.rawQuery?.let { "?$it" } ?: "")
                     up.write("$method $path HTTP/1.1\r\n".toByteArray())
@@ -164,7 +164,7 @@ class HttpProxyCapture(
                 val method = parts[0]; val path = parts[1]; val headers = parseHeaders(lines.drop(1))
                 val body = readBody(input, headers.value("Content-Length")?.toIntOrNull(), headers.value("Transfer-Encoding")?.contains("chunked", true) == true, config.maxBodyBytes)
                 val request = NetworkRequest(method, "https://$host$path", headers, body.text())
-                val upstream = (SSLContext.getDefault().socketFactory.createSocket(host, targetPort) as SSLSocket)
+                val upstream = (SSLContext.getDefault().socketFactory.createSocket(upstreamHost(host), targetPort) as SSLSocket)
                 upstream.use { secure ->
                     secure.startHandshake()
                     val up = secure.outputStream.buffered(); val down = secure.inputStream.buffered()
@@ -199,7 +199,7 @@ class HttpProxyCapture(
     }
 
     private fun handleHttp2(downstream: SSLSocket, host: String, targetPort: Int, connectId: RequestId, started: Long) {
-        val upstream = (SSLContext.getDefault().socketFactory.createSocket(host, targetPort) as SSLSocket)
+        val upstream = (SSLContext.getDefault().socketFactory.createSocket(upstreamHost(host), targetPort) as SSLSocket)
         upstream.use { secure ->
             setApplicationProtocols(secure, arrayOf("h2", "http/1.1"))
             secure.startHandshake()
@@ -251,6 +251,11 @@ class HttpProxyCapture(
     private fun setApplicationProtocols(socket: SSLSocket, protocols: Array<String>) {
         socket.sslParameters = socket.sslParameters.apply { applicationProtocols = protocols }
     }
+
+    /** Android emulators address the host as 10.0.2.2; the host proxy must
+     * translate that alias before opening its own upstream socket. */
+    private fun upstreamHost(host: String): String =
+        if (deviceSerial.startsWith("emulator-") && host == "10.0.2.2") "127.0.0.1" else host
 
     private fun record(id: RequestId, exchange: NetworkExchange) { exchanges[id] = exchange; timeline.append(exchange) }
     private fun fail(id: RequestId, request: NetworkRequest, started: Long, kind: String, message: String) {
