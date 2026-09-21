@@ -107,7 +107,9 @@ not part of the current working CLI:
 - `lynx db snapshots ...` snapshot history listing.
 - `lynx db diff ...` and `lynx db watch ...`.
 - TUI views, persistent evidence export/import, and JVMTI attribution.
-- iOS traffic capture (certificate onboarding is available; capture is not).
+- physical iOS capture and complete simulator transport parity; simulator
+  attach/database and host-proxy capture are available, with localhost/bypass
+  cases 🚧 under construction.
 
 ## Documentation
 

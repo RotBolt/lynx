@@ -167,7 +167,11 @@ private fun runDaemon() {
     val networkFactory = dev.lynx.daemon.NetworkSourceFactory { target, evidence ->
         ManagedNetworkSource(target, HttpProxyCapture(evidence, dev.lynx.model.SessionId("daemon"), target.deviceSerial, target.packageName, target.pid))
     }
-    val databaseFactory = dev.lynx.daemon.DatabaseSourceFactory { target -> AdbDatabaseSource(dev.lynx.model.SessionId("daemon"), target.deviceSerial, target.packageName, target.pid) }
+    val databaseFactory = dev.lynx.daemon.DatabaseSourceFactory { target ->
+        if (target.deviceSerial.startsWith("ios-simulator:")) {
+            dev.lynx.database.IosSimulatorDatabaseSource(dev.lynx.model.SessionId("daemon"), target.deviceSerial.removePrefix("ios-simulator:"), target.packageName)
+        } else AdbDatabaseSource(dev.lynx.model.SessionId("daemon"), target.deviceSerial, target.packageName, target.pid)
+    }
     val service = dev.lynx.daemon.DaemonService(timeline = timeline, networkFactory = networkFactory, databaseFactory = databaseFactory)
     LocalDaemonServer(socketPath, service).use { server ->
         server.start()
@@ -180,27 +184,29 @@ private class ManagedNetworkSource(
     private val target: ResolvedTarget,
     private val delegate: HttpProxyCapture,
 ) : NetworkCaptureSource {
-    private val controller = AdbAndroidProxyController(target.deviceSerial)
+    private val androidController = target.deviceSerial.takeUnless { it.startsWith("ios-simulator:") }?.let { AdbAndroidProxyController(it) }
+    private val macController = if (target.deviceSerial.startsWith("ios-simulator:")) dev.lynx.network.MacSystemProxyController() else null
     private var lease: dev.lynx.network.ProxyLease? = null
+    private var macLease: dev.lynx.network.MacProxyLease? = null
     private var appliedEndpoint: String? = null
     override val endpoint: String? get() = delegate.endpoint
     override val caCertificatePath: String? get() = delegate.caCertificatePath
     override suspend fun start(config: NetworkCaptureConfig) {
         delegate.start(config)
         try {
-            val endpoint = AndroidProxyEndpoint.forDevice(target.deviceSerial, config.listenHost, delegate.port)
-            lease = controller.apply(endpoint)
-            val observed = controller.inspect().rawValue
-            if (observed != endpoint) {
-                throw dev.lynx.network.ProxyControllerException(
-                    "PROXY_NOT_APPLIED",
-                    "Android proxy verification returned ${observed ?: "unset"}; expected $endpoint",
-                )
+            val endpoint = if (macController != null) "127.0.0.1:${delegate.port}" else AndroidProxyEndpoint.forDevice(target.deviceSerial, config.listenHost, delegate.port)
+            if (androidController != null) {
+                lease = androidController.apply(endpoint)
+                val observed = androidController.inspect().rawValue
+                if (observed != endpoint) throw dev.lynx.network.ProxyControllerException("PROXY_NOT_APPLIED", "Android proxy verification returned ${observed ?: "unset"}; expected $endpoint")
+            } else {
+                macLease = macController?.apply(endpoint)
             }
             appliedEndpoint = endpoint
         } catch (error: Exception) {
             runCatching { delegate.stop() }
-            lease?.let { runCatching { controller.restore(it) } }
+            lease?.let { runCatching { androidController?.restore(it) } }
+            macLease?.let { runCatching { it.restore() } }
             lease = null
             appliedEndpoint = null
             throw error
@@ -213,9 +219,8 @@ private class ManagedNetworkSource(
         } catch (error: Throwable) {
             failure = error
         } finally {
-            lease?.let {
-                try { controller.restore(it) } catch (error: Throwable) { if (failure == null) failure = error }
-            }
+            lease?.let { try { androidController?.restore(it) } catch (error: Throwable) { if (failure == null) failure = error } }
+            macLease?.let { try { it.restore() } catch (error: Throwable) { if (failure == null) failure = error } }
             lease = null
             appliedEndpoint = null
         }
@@ -226,11 +231,11 @@ private class ManagedNetworkSource(
         val base = delegate.capabilities()
         val endpoint = appliedEndpoint
         if (endpoint == null) return base.copy(proxyStatus = "stopped", proxyEndpoint = null)
-        val observed = runCatching { controller.inspect().rawValue }.getOrNull()
+        val observed = runCatching { androidController?.inspect()?.rawValue }.getOrNull()
         return base.copy(
             proxyEndpoint = endpoint,
             proxyStatus = when (observed) {
-                endpoint -> "configured"
+                endpoint -> if (macController != null || observed == endpoint) "configured" else "bypassed_or_replaced"
                 null -> "unreachable"
                 else -> "bypassed_or_replaced"
             },

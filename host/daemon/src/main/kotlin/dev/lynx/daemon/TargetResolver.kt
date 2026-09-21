@@ -10,7 +10,10 @@ fun interface TargetResolver {
 
 class AdbTargetResolver(
     private val adb: AdbClient = AdbClient(ProcessCommandRunner()),
+    private val ios: IosSimulatorTargetResolver = IosSimulatorTargetResolver(),
 ) : TargetResolver {
     override fun resolve(deviceSerial: String?, packageName: String): ResolvedTarget =
-        adb.resolveTarget(deviceSerial, packageName)
+        if (deviceSerial?.startsWith("ios-simulator:") == true) {
+            ios.resolve(deviceSerial.removePrefix("ios-simulator:"), packageName)
+        } else adb.resolveTarget(deviceSerial, packageName)
 }

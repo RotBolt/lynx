@@ -19,5 +19,19 @@ Build the iOS simulator fixture with `iosApp/build-simulator.sh`; it produces
 an installable `.app` bundle for the booted arm64 simulator.
 
 The fixture’s iOS app and SQLite writes are verified with `xcrun simctl`. Lynx’s
-production attachment/database/network path remains Android/ADB-only; simulator
-inspection is 🚧 under construction and is not claimed by this fixture yet.
+simulator target, host-proxy lifecycle, and read-only SQLite inspection are now
+available. Full simulator transport parity (especially localhost bypasses and
+system traffic filtering) remains 🚧 under construction.
+
+Example iOS inspection flow:
+
+```bash
+UDID=25CD22C1-E1F2-417F-87BA-09D7600F3B93
+lynx attach --device ios-simulator:$UDID --package dev.lynx.dummyapp --json
+lynx network start --json
+lynx network list --json
+lynx db list --json
+lynx db snapshot Documents/dummyapp.db --json
+lynx db tables --snapshot <snapshot-id> --json
+lynx db query --snapshot <snapshot-id> 'SELECT * FROM network_events' --json
+```

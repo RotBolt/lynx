@@ -26,6 +26,12 @@ $LYNX status --json
 $LYNX detach --json
 ```
 
+For an iOS Simulator, use the explicit target prefix:
+
+```bash
+$LYNX attach --device ios-simulator:<simulator-udid> --package dev.lynx.dummyapp --json
+```
+
 `--device` is optional when exactly one online device is available. Lynx resolves
 the process PID; agents should not supply a fabricated PID.
 
@@ -88,7 +94,8 @@ These are specified but not implemented in the current CLI:
 - `lynx timeline ...` merged evidence queries.
 - `lynx db snapshots ...`, `lynx db diff ...`, and `lynx db watch ...`.
 - TUI, durable evidence export/import, and JVMTI attribution.
-- iOS network traffic capture; only certificate onboarding is available.
+- physical iOS attachment and complete simulator transport parity; simulator
+  capture uses the macOS system proxy and localhost/bypass cases remain 🚧.
 
 Do not interpret an empty capture as proof that no traffic occurred: direct
 native sockets, QUIC/HTTP3, certificate pinning, or missing CA trust can keep
