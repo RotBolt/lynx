@@ -46,5 +46,9 @@ jobs:
           distribution: temurin
           java-version: '21'
       - uses: gradle/actions/setup-gradle@v4
-      - run: .\gradlew.bat test :core:model:allTests :apps:native-cli:compileKotlinMingwX64 --no-daemon
-      - run: echo "Windows native runtime adapters are under construction 🚧"
+      - run: .\gradlew.bat test :core:model:allTests :apps:native-cli:linkReleaseExecutableMingwX64 --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lynx-windows-x64
+          path: apps/native-cli/build/bin/mingwX64/releaseExecutable/native-cli.exe
+      - run: echo "Windows runtime adapters are under construction 🚧"

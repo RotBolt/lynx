@@ -6,7 +6,7 @@ Lynx now has a Kotlin Multiplatform native CLI target graph:
 |---|---|---|
 | macOS ARM64 | `native-cli.kexe` | Database inspection available; network adapter under construction 🚧 |
 | Linux x64 | `native-cli.kexe` | Native build and shared code compile; runtime verification follows CI |
-| Windows x64 | `native-cli.kexe` | Shared code compile only; platform adapters under construction 🚧 |
+| Windows x64 | `native-cli.exe` | Native executable published; platform adapters under construction 🚧 |
 
 ## Build locally
 
@@ -22,6 +22,20 @@ The native database path uses the host `adb` executable. If it is not on
 ANDROID_HOME="$HOME/Library/Android/sdk" \
   ./apps/native-cli/build/bin/macosArm64/releaseExecutable/native-cli.kexe devices
 ```
+
+## Attach session (macOS/Linux native CLI)
+
+Native attach state is shared by independent invocations through
+`$HOME/.lynx/native-session`:
+
+```bash
+lynx-native attach emulator-5554 dev.lynx.dummyapp
+lynx-native status
+lynx-native detach
+```
+
+The Windows executable is distributed for common CLI compatibility, while its
+host adapters remain under construction 🚧.
 
 ## Android database smoke path
 
