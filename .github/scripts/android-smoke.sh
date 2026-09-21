@@ -11,7 +11,7 @@ adb shell getprop sys.boot_completed | grep -q 1
 APK="dummyapp/androidApp/build/outputs/apk/debug/androidApp-debug.apk"
 adb install -r "$APK"
 adb shell am force-stop dev.lynx.dummyapp
-adb shell am start -W -n dev.lynx.dummyapp/.MainActivity
+adb shell am start -n dev.lynx.dummyapp/.MainActivity
 sleep 5
 adb shell run-as dev.lynx.dummyapp test -s databases/dummyapp.db
 
