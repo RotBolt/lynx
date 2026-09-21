@@ -14,3 +14,10 @@ python3 test-server/server.py
 
 The HTTPS/HTTP/2 call currently uses the public JSONPlaceholder HTTPS endpoint
 until the local TLS test server is added.
+
+Build the iOS simulator fixture with `iosApp/build-simulator.sh`; it produces
+an installable `.app` bundle for the booted arm64 simulator.
+
+The fixture’s iOS app and SQLite writes are verified with `xcrun simctl`. Lynx’s
+production attachment/database/network path remains Android/ADB-only; simulator
+inspection is 🚧 under construction and is not claimed by this fixture yet.

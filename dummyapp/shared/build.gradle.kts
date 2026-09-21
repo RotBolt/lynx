@@ -14,6 +14,13 @@ kotlin {
     iosSimulatorArm64()
     iosX64()
 
+    targets.withType<org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget>().configureEach {
+        binaries.framework {
+            baseName = "DummyShared"
+            isStatic = true
+        }
+    }
+
     sourceSets {
         commonMain.dependencies {
             implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
@@ -23,6 +30,9 @@ kotlin {
         androidMain.dependencies {
             implementation("io.ktor:ktor-client-okhttp:3.3.0")
             implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+        }
+        iosMain.dependencies {
+            implementation("io.ktor:ktor-client-darwin:3.3.0")
         }
         commonTest.dependencies {
             implementation(kotlin("test"))
