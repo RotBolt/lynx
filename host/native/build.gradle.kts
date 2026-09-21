@@ -3,6 +3,9 @@ plugins {
     kotlin("plugin.serialization")
 }
 
+val linuxNativeLibDir = providers.environmentVariable("LYNX_LINUX_LIB_DIR").orNull
+val allowLinuxSharedUndefined = providers.environmentVariable("LYNX_LINUX_ALLOW_SHLIB_UNDEFINED").orNull == "true"
+
 kotlin {
     macosArm64()
     linuxX64()
@@ -21,6 +24,10 @@ kotlin {
         }
     }
     linuxX64 {
+        binaries.all {
+            linuxNativeLibDir?.let { linkerOpts("-L$it") }
+            if (allowLinuxSharedUndefined) linkerOpts("-Wl,--allow-shlib-undefined")
+        }
         compilations.getByName("main").cinterops {
             create("lynxSsl") {
                 defFile(project.file("src/nativeInterop/cinterop/lynx-ssl-linux.def"))

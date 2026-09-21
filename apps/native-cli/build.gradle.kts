@@ -3,12 +3,24 @@ plugins {
     kotlin("plugin.serialization")
 }
 
+val linuxNativeLibDir = providers.environmentVariable("LYNX_LINUX_LIB_DIR").orNull
+val allowLinuxSharedUndefined = providers.environmentVariable("LYNX_LINUX_ALLOW_SHLIB_UNDEFINED").orNull == "true"
+
 kotlin {
     macosArm64 {
         binaries { executable { baseName = "lynx"; entryPoint = "dev.lynx.nativecli.main" } }
     }
     linuxX64 {
-        binaries { executable { baseName = "lynx"; entryPoint = "dev.lynx.nativecli.main" } }
+        binaries {
+            all {
+                linuxNativeLibDir?.let { linkerOpts("-L$it") }
+                if (allowLinuxSharedUndefined) linkerOpts("-Wl,--allow-shlib-undefined")
+            }
+            executable {
+                baseName = "lynx"
+                entryPoint = "dev.lynx.nativecli.main"
+            }
+        }
     }
     mingwX64 {
         binaries { executable { baseName = "lynx"; entryPoint = "dev.lynx.nativecli.main" } }
