@@ -5,16 +5,26 @@ import dev.lynx.nativehost.NativeProcessRunner
 import dev.lynx.model.DatabaseId
 
 expect fun nativeProcessRunner(): NativeProcessRunner
+expect fun nativeSessionStore(): dev.lynx.nativehost.NativeSessionStore
 
 fun main(args: Array<String>) {
     NativeCli(nativeProcessRunner()).run(args.toList())
 }
 
 class NativeCli(private val runner: NativeProcessRunner) {
+    private val sessions = dev.lynx.nativehost.NativeSessionManager(runner, nativeSessionStore()) { "session_${kotlin.time.Clock.System.now().toEpochMilliseconds()}" }
+
     fun run(args: List<String>) {
         when (args.firstOrNull()) {
             "--version", "version" -> println("lynx-native 0.1.0-SNAPSHOT")
             "devices" -> printResult(runner.run(listOf("adb", "devices")))
+            "attach" -> {
+                val device = args.getOrNull(1) ?: error("device is required")
+                val packageName = args.getOrNull(2) ?: error("package is required")
+                println(sessions.attach(device, packageName))
+            }
+            "status" -> println(sessions.status())
+            "detach" -> println(sessions.detach())
             "db" -> runDatabase(args.drop(1))
             else -> println("Usage: lynx [--version|devices|db list|db snapshot|db tables|db query]")
         }
