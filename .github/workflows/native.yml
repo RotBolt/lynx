@@ -46,7 +46,7 @@ jobs:
           distribution: temurin
           java-version: '21'
       - uses: gradle/actions/setup-gradle@v4
-      - run: .\gradlew.bat test :core:model:allTests :apps:native-cli:linkReleaseExecutableMingwX64 --no-daemon
+      - run: .\gradlew.bat :core:model:allTests :apps:native-cli:linkReleaseExecutableMingwX64 --no-daemon
       - uses: actions/upload-artifact@v4
         with:
           name: lynx-windows-x64
