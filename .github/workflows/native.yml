@@ -15,7 +15,7 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
-      - uses: actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v4
       - run: ./gradlew test :core:model:allTests :apps:native-cli:linkReleaseExecutableMacosArm64 --no-daemon
       - uses: actions/upload-artifact@v4
         with:
@@ -30,7 +30,7 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
-      - uses: actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v4
       - run: ./gradlew test :core:model:allTests :apps:native-cli:linkReleaseExecutableLinuxX64 --no-daemon
       - uses: actions/upload-artifact@v4
         with:
@@ -45,6 +45,6 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
-      - uses: actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v4
       - run: .\gradlew.bat test :core:model:allTests :apps:native-cli:compileKotlinMingwX64 --no-daemon
       - run: echo "Windows native runtime adapters are under construction 🚧"
