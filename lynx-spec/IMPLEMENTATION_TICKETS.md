@@ -70,7 +70,7 @@ session across app process restarts.
 - detach prevents rebinding.
 
 ## M1-03 — Network proxy engine adapter spike
-**Status:** In progress — HTTP/1 and HTTPS CONNECT MITM implemented; HTTP/2/WebSocket engine work pending
+**Status:** Implemented for the MVP proxy adapter; HTTP/1.1, HTTPS CONNECT MITM, HTTP/2, and WebSocket capture verified
 
 **Priority:** P0 · **Depends on:** M1-01
 
@@ -145,7 +145,7 @@ iOS Simulator `simctl` installation. Physical iOS profile delivery and richer
 trust-state probing remain in progress.
 
 ## M1-14 — HTTP/2 proxy capture
-**Status:** Planned
+**Status:** Implemented and verified against the emulator Ktor client
 
 **Priority:** P0 · **Depends on:** M1-03
 
@@ -155,7 +155,7 @@ Replace the temporary HTTP parser behind the proxy boundary with an engine that
 can decode HTTP/2 over TLS and preserve complete request/response evidence.
 
 ## M1-15 — WebSocket capture
-**Status:** Planned
+**Status:** Implemented and verified with an RFC 6455 upgrade/frame integration test
 
 **Priority:** P0 · **Depends on:** M1-14
 
@@ -165,7 +165,7 @@ Capture WebSocket upgrades and text/binary frames, retaining close/error events
 and exposing them through versioned JSON/JSONL evidence.
 
 ## M1-16 — Android proxy compatibility (terminal-only)
-**Status:** In progress
+**Status:** Implemented for Android system-proxy traffic; bypass/direct-socket limitation remains explicit
 
 **Priority:** P0 · **Depends on:** M1-04, M1-05
 
