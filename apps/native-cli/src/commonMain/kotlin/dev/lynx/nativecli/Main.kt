@@ -14,6 +14,7 @@ expect fun nativeProcessRunner(): NativeProcessRunner
 expect fun nativeSessionStore(): dev.lynx.nativehost.NativeSessionStore
 expect fun nativeNetworkInspector(): NativeNetworkInspector
 expect fun nativeNetworkWorker(port: Int)
+expect fun nativeCertificateManager(): dev.lynx.nativehost.NativeCertificateManager
 
 fun main(args: Array<String>) {
     NativeCli(nativeProcessRunner(), nativeNetworkInspector()).run(args.toList())
@@ -41,6 +42,17 @@ class NativeCli(private val runner: NativeProcessRunner, private val network: Na
     }
 
     private fun runNetwork(args: List<String>) {
+        if (args.firstOrNull() == "ca") {
+            val manager = nativeCertificateManager()
+            val state = when (args.getOrNull(1)) {
+                "show" -> manager.show()
+                "install" -> manager.install()
+                "remove" -> manager.remove()
+                else -> error("Usage: lynx network ca [show|install|remove]")
+            }
+            println(json.encodeToString(state))
+            return
+        }
         val command = when (args.firstOrNull()) {
             "start" -> NetworkCommand.Start(NetworkCaptureSettings(listenHost = option(args, "--host") ?: "0.0.0.0", listenPort = option(args, "--port")?.toIntOrNull() ?: 0))
             "stop" -> NetworkCommand.Stop

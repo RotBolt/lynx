@@ -83,6 +83,14 @@ The first run creates a CA at `$HOME/.lynx/certs/daemon.pem`; install it in the
 debuggable app/device trust store for HTTPS. Native HTTP/2 capture is included;
 TLS-WebSocket and QUIC/HTTP3 remain under construction 🚧.
 
+Manage the native CA material without a JVM:
+
+```bash
+lynx network ca show --json
+lynx network ca install --json
+lynx network ca remove --json
+```
+
 ### JVM compatibility backend
 
 The Gradle/JVM distribution remains available for contributors and compatibility

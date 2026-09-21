@@ -10,7 +10,7 @@ import platform.posix.getenv
 class PosixNativeCertificateAuthority(
     private val runner: NativeProcessRunner = PosixProcessRunner(),
     private val root: String = (getenv("HOME")?.toKString()?.takeIf(String::isNotBlank) ?: "/tmp") + "/.lynx/certs",
-) {
+) : NativeCertificateManager {
     data class Leaf(val certificate: String, val privateKey: String)
 
     fun ensureCa(): String {
@@ -40,5 +40,28 @@ class PosixNativeCertificateAuthority(
     }
 
     fun fingerprint(): String? = runner.run(listOf("openssl", "x509", "-in", ensureCa(), "-noout", "-fingerprint", "-sha256")).stdout.trim().substringAfter("=", "").replace(":", ":").takeIf(String::isNotBlank)
+
+    override fun show(): NativeCertificateState = NativeCertificateState(
+        configured = exists("$root/daemon.pem") && exists("$root/daemon.key"),
+        pemPath = "$root/daemon.pem",
+        fingerprint = if (exists("$root/daemon.pem")) fingerprint() else null,
+        instructions = installationInstructions(),
+    )
+
+    override fun install(): NativeCertificateState = show().let {
+        ensureCa()
+        it.copy(configured = true, fingerprint = fingerprint(), trustStatus = "user_installation_required")
+    }
+
+    override fun remove(): NativeCertificateState {
+        runner.run(listOf("sh", "-c", "rm -f '$root'/daemon.pem '$root'/daemon.key '$root'/leaf-*.pem '$root'/leaf-*.key '$root'/leaf-*.csr '$root'/leaf-*.ext '$root'/ca-*.srl"))
+        return NativeCertificateState(false, "$root/daemon.pem", instructions = installationInstructions())
+    }
+
+    private fun installationInstructions() = listOf(
+        "Install daemon.pem explicitly in the debuggable app or device trust store.",
+        "For Android debug builds, enable user CAs through Network Security Config.",
+        "The native CLI never mutates a device trust store implicitly.",
+    )
     private fun exists(path: String) = runner.run(listOf("test", "-f", path)).exitCode == 0
 }

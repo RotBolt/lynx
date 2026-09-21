@@ -89,3 +89,14 @@ CONNECT, and HTTP/2 traffic using the host OpenSSL and nghttp2 runtimes. The
 first run creates a CA under `$HOME/.lynx/certs`; install `daemon.pem` in the
 debug app/device trust store. TLS-WebSocket and QUIC/HTTP3 remain under
 construction 🚧.
+
+Native CA lifecycle commands are available without the JVM distribution:
+
+```bash
+lynx network ca show --json
+lynx network ca install --json
+lynx network ca remove --json
+```
+
+`install` creates or refreshes the host CA and prints explicit trust-store
+instructions; it never mutates an Android or iOS trust store implicitly.
