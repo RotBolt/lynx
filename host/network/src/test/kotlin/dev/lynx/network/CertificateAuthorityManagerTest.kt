@@ -52,4 +52,13 @@ class CertificateAuthorityManagerTest {
         assertFalse(manager.show().configured)
         assertFalse(manager.remove().removed)
     }
+
+    @Test
+    fun removeClearsManagedIosProfileArtifact() {
+        val directory = Files.createTempDirectory("lynx-ca-test")
+        val manager = CertificateAuthorityManager(directory)
+        Files.writeString(directory.resolve("lynx-ca.mobileconfig"), "profile")
+        assertTrue(manager.remove().removed)
+        assertFalse(Files.exists(directory.resolve("lynx-ca.mobileconfig")))
+    }
 }

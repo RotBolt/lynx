@@ -47,6 +47,7 @@ class CertificateAuthorityManager(
 ) {
     private val storePath get() = directory.resolve("ca.p12")
     private val pemPath get() = directory.resolve("ca.pem")
+    private val iosProfilePath get() = directory.resolve("lynx-ca.mobileconfig")
 
     init { ensureProvider() }
 
@@ -80,9 +81,10 @@ class CertificateAuthorityManager(
 
     @Synchronized
     fun remove(): CertificateAuthorityRemoval {
-        val existed = Files.exists(storePath) || Files.exists(pemPath)
+        val existed = Files.exists(storePath) || Files.exists(pemPath) || Files.exists(iosProfilePath)
         Files.deleteIfExists(storePath)
         Files.deleteIfExists(pemPath)
+        Files.deleteIfExists(iosProfilePath)
         return CertificateAuthorityRemoval(existed, pemPath.toString())
     }
 
