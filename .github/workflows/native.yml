@@ -54,9 +54,24 @@ jobs:
           BIN="$PWD/apps/native-cli/build/bin/linuxX64/releaseExecutable/lynx.kexe"
           test -x "$BIN"
           export LYNX_EXECUTABLE="$BIN"
-          "$BIN" network doctor --json
+          python3 -m http.server 38133 --bind 127.0.0.1 >/tmp/lynx-linux-http.log 2>&1 &
+          FIXTURE_PID=$!
+          trap 'kill "$FIXTURE_PID" 2>/dev/null || true; "$BIN" network stop --json >/dev/null 2>&1 || true' EXIT
           "$BIN" network start --port 62006 --json
-          "$BIN" network list --json
+          for attempt in $(seq 1 20); do
+            if curl --silent --show-error --noproxy '' \
+              -x http://127.0.0.1:62006 \
+              http://127.0.0.1:38133/README.md \
+              -o /tmp/lynx-linux-http-body -w '%{http_code}' >/tmp/lynx-linux-http-status; then
+              break
+            fi
+            sleep 0.2
+          done
+          test "$(cat /tmp/lynx-linux-http-status)" = 200
+          LIST="$($BIN network list --json)"
+          printf '%s' "$LIST" | grep -q '"method":"GET"'
+          printf '%s' "$LIST" | grep -q '"status":200'
+          "$BIN" network doctor --json
           "$BIN" network stop --json
       - run: |
           mkdir -p dist/lynx-skill
