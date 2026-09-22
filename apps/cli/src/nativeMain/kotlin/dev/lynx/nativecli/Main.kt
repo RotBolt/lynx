@@ -101,10 +101,7 @@ class NativeCli(private val runner: NativeProcessRunner, private val network: Na
                 val target = databaseTarget(args, platform)
                 val invocation = when (platform.lowercase()) {
                     "android" -> listOf("adb", "-s", target.first, "shell", "run-as", target.second, "find", "databases", "-type", "f")
-                    "ios" -> listOf(
-                        "sh", "-c",
-                        "root=\$(xcrun simctl get_app_container ${quote(target.first)} ${quote(target.second)} data); cd \"\$root\" && find . -name '*.db' -type f | sed 's#^\\./##'",
-                    )
+                    "ios" -> return listIosDatabases(target)
                     else -> error("unsupported platform '$platform'; expected android or ios")
                 }
                 printResult(runner.run(invocation))
@@ -116,14 +113,13 @@ class NativeCli(private val runner: NativeProcessRunner, private val network: Na
                 requireSafeRelativePath(database.value)
                 val path = "/tmp/lynx-native-${safeName(database.value)}.db"
                 val result = when (platform.lowercase()) {
-                    "android" -> {
-                        val shell = listOf("adb", "-s", target.first, "exec-out", "run-as", target.second, "cat", database.value)
-                            .joinToString(" ") { quote(it) }
-                        runner.run(listOf("sh", "-c", "$shell > ${quote(path)}"))
-                    }
+                    "android" -> runner.runToFile(
+                        listOf("adb", "-s", target.first, "exec-out", "run-as", target.second, "cat", database.value),
+                        path,
+                    )
                     "ios" -> {
-                        val rootCommand = "root=\$(xcrun simctl get_app_container ${quote(target.first)} ${quote(target.second)} data)"
-                        runner.run(listOf("sh", "-c", "$rootCommand && cp \"\$root/${database.value}\" ${quote(path)}"))
+                        val root = iosContainer(target) ?: return
+                        runner.run(listOf("cp", "$root/${database.value}", path))
                     }
                     else -> error("unsupported platform '$platform'; expected android or ios")
                 }
@@ -140,6 +136,24 @@ class NativeCli(private val runner: NativeProcessRunner, private val network: Na
             }
             else -> error("Usage: lynx db [list|snapshot|tables|query] ...")
         }
+    }
+
+    private fun listIosDatabases(target: Pair<String, String>) {
+        val root = iosContainer(target) ?: return
+        val result = runner.run(listOf("find", root, "-name", "*.db", "-type", "f"))
+        if (result.exitCode != 0) return printResult(result)
+        val prefix = "$root/"
+        val relative = result.stdout.lineSequence().joinToString("\n") { it.removePrefix(prefix) }
+        printResult(result.copy(stdout = if (relative.isBlank()) relative else "$relative\n"))
+    }
+
+    private fun iosContainer(target: Pair<String, String>): String? {
+        val result = runner.run(listOf("xcrun", "simctl", "get_app_container", target.first, target.second, "data"))
+        if (result.exitCode != 0) {
+            printResult(result)
+            return null
+        }
+        return result.stdout.trim().takeIf { it.isNotEmpty() }
     }
 
     /** Returns the platform target ID and app identifier for DB discovery and snapshots. */
@@ -160,7 +174,6 @@ class NativeCli(private val runner: NativeProcessRunner, private val network: Na
             "database path must be a safe app-relative path"
         }
     }
-    private fun quote(value: String) = "'" + value.replace("'", "'\\''") + "'"
     private fun printResult(result: NativeCommandResult) {
         if (result.stdout.isNotBlank()) print(result.stdout)
         if (result.exitCode != 0 && result.stderr.isNotBlank()) print(result.stderr)

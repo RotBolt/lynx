@@ -30,6 +30,10 @@ expect fun nativeExecutablePath(): String?
 
 interface NativeProcessRunner {
     fun run(command: List<String>): NativeCommandResult
+
+    /** Streams command stdout directly to a file; never routes database bytes through text. */
+    fun runToFile(command: List<String>, outputPath: String): NativeCommandResult =
+        NativeCommandResult(127, "", "file output is not supported by this process runner")
 }
 
 interface NativeDatabaseInspector {

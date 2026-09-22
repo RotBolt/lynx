@@ -8,6 +8,7 @@ certificates and traffic remain under ignored `build/verification/` directories.
 | M1.1-P0 | `2a333e8` / `checkpoint/m1-1/P0-proxy-recovery` | pass | pass | pass | pass | pass | pass | start/stop, forced worker death, detach passed | pass |
 | M1.1-00 | `0e800e8` | pass | pass | pass | pass | pass | pass | restored | pass; committed harness run `committed-20260922-174017` |
 | M1.1-01 | pending | pass: API 17 emulator, shell relay and `run-as` FD/inode proof | pass: booted iOS 26.4 Simulator, libproc tuple/process proof | pass | pass | pass | pass | Android proxy/reverse/helper and macOS proxy restored | pass for recorded emulator/simulator scope; API 26, physical Android, PID-race and IPv6 device rows pending |
+| M1.1-02 | pending | pass: API 17 emulator database snapshot | pass: booted iOS 26.4 Simulator database snapshot | source/snapshot rows matched on both platforms | pass | pass | pass | Android proxy `:0`, no reverse mappings, macOS web and secure-web proxies restored | pass; tool resolution and subprocess diagnostics covered by native tests |
 
 Use `pass`, `fail`, `blocked`, or `not_run`; never replace a missing live row
 with an old result or a local fixture.
@@ -31,3 +32,15 @@ with an old result or a local fixture.
   `build/verification/m1-1/01/precommit-20260922-223841`; raw traffic and copied
   databases remain ignored. The run restored Android proxy `:0`, removed the
   owned reverse mapping/helper, and restored macOS web and secure-web proxies.
+
+## M1.1-02 pre-commit evidence
+
+- Tool-resolution and process tests passed on 2026-09-22, including SDK, PATH,
+  platform-default and Homebrew candidate ordering; explicit invalid overrides;
+  literal argument preservation; separated stderr; and exit code `7`.
+- Full legacy V0 regression evidence is in
+  `build/verification/m1-1/02/20260922-225241`. Android and iOS source/snapshot
+  database query rows matched. Both Android and iOS WebSocket smoke runs emitted
+  HTTP 101 and echoed `lynx-sample-ping`; raw capture material stays ignored.
+- After the live run, Android proxy was `:0`, no ADB reverse mappings remained,
+  and macOS web and secure-web proxy before/after files matched.
