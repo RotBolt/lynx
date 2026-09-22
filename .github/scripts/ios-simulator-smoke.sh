@@ -28,25 +28,20 @@ xcrun simctl boot "$DEVICE" >/dev/null 2>&1 || true
 xcrun simctl bootstatus "$DEVICE" -b
 
 dummyapp/iosApp/build-simulator.sh
-APP="dummyapp/iosApp/build/Debug-iphonesimulator/LynxDummyApp.app"
+APP="dummyapp/iosApp/build/Debug-iphonesimulator/LynxSampleApp.app"
+test -d "$APP"
+test -x "$APP/SampleApp"
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Info.plist")" == "dev.lynx.dummyapp" ]]
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP/Info.plist")" == "SampleApp" ]]
 
 xcrun simctl install "$DEVICE" "$APP"
 xcrun simctl terminate "$DEVICE" dev.lynx.dummyapp >/dev/null 2>&1 || true
-xcrun simctl launch "$DEVICE" dev.lynx.dummyapp
+LAUNCH_OUTPUT="$(xcrun simctl launch "$DEVICE" dev.lynx.dummyapp)"
 sleep 5
 
-PID="$(xcrun simctl spawn "$DEVICE" ps -A 2>/dev/null | awk '/DummyApp/ {print $1; exit}' || true)"
-CONTAINER="$(xcrun simctl get_app_container "$DEVICE" dev.lynx.dummyapp data)"
-DB="$CONTAINER/Documents/dummyapp.db"
-test -f "$DB"
+PID="${LAUNCH_OUTPUT##*: }"
+[[ "$PID" =~ ^[0-9]+$ ]]
 
-for _ in {1..45}; do
-  ROWS="$(sqlite3 "$DB" 'select count(*) from network_events;' 2>/dev/null || true)"
-  if [[ "$ROWS" =~ ^[3-9][0-9]*$ ]]; then
-    break
-  fi
-  sleep 1
-done
-test "${ROWS:-0}" -ge 3
-
-echo "IOS_UI_INTEGRATION_OK device=$DEVICE database=$DB pid=${PID:-unknown} rows=$ROWS"
+# The app intentionally makes no requests on launch. Real network capture is
+# exercised separately by network-capture-smoke.sh after explicit button taps.
+echo "IOS_APP_LAUNCH_OK device=$DEVICE package=dev.lynx.dummyapp pid=$PID"

@@ -29,7 +29,7 @@ jobs:
         run: ./gradlew test :apps:cli:installJvmDist --no-daemon
 
   android-emulator-smoke:
-    name: Android emulator UI/integration smoke test
+    name: Android sample app launch/UI smoke test
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
@@ -64,7 +64,7 @@ jobs:
           script: .github/scripts/android-smoke.sh
 
   ios-simulator-smoke:
-    name: iOS Simulator UI/integration smoke test
+    name: iOS Simulator sample app launch smoke test
     # macOS 26 provides the iOS 26 SDK required by the Kotlin/Native fixture.
     runs-on: macos-26
     timeout-minutes: 35
