@@ -264,7 +264,7 @@ class PosixNativeNetworkInspector(
                 downstream.close()
             }
         } catch (t: Throwable) {
-            store.append(NetworkExchange(EvidenceMeta(EvidenceId("ev_${randomId()}"), SessionId("native"), kotlin.time.Clock.System.now(), EvidenceSource.NETWORK, "native", "unknown", null), requestId, NetworkRequest("CONNECT", "https://$host", emptyMap(), null), null, NetworkFailure("HTTPS_MITM_ERROR", t.message), NetworkTiming(started, getTimeMillis(), getTimeMillis() - started), NetworkCaptureMetadata(false, 0, false), protocol = "HTTPS"))
+            store.append(NetworkExchange(nativeNetworkEvidenceMeta(EvidenceId("ev_${randomId()}"), sessions.load()), requestId, NetworkRequest("CONNECT", "https://$host", emptyMap(), null), null, NetworkFailure("HTTPS_MITM_ERROR", t.message), NetworkTiming(started, getTimeMillis(), getTimeMillis() - started), NetworkCaptureMetadata(false, 0, false), protocol = "HTTPS"))
         }
     }
 
@@ -391,7 +391,7 @@ class PosixNativeNetworkInspector(
         val completed = getTimeMillis()
         val id = request?.requestId ?: RequestId("${connectId.value}_${response?.streamId ?: "unknown"}")
         return NetworkExchange(
-            meta = EvidenceMeta(EvidenceId("ev_${randomId()}"), SessionId("native"), kotlin.time.Clock.System.now(), EvidenceSource.NETWORK, "native", "unknown", null),
+            meta = nativeNetworkEvidenceMeta(EvidenceId("ev_${randomId()}"), sessions.load()),
             requestId = id,
             request = NetworkRequest(method, url, requestHeaders, requestBody),
             response = response?.let { NetworkResponse(status, responseHeaders, responseBody) },
@@ -403,7 +403,7 @@ class PosixNativeNetworkInspector(
     }
 
     private fun exchange(request: NativeHttpParser.Request, id: RequestId, response: NativeHttpParser.Response?, failure: NetworkFailure?, started: Long) = NetworkExchange(
-        meta = EvidenceMeta(EvidenceId("ev_${randomId()}"), SessionId("native"), kotlin.time.Clock.System.now(), EvidenceSource.NETWORK, "native", "unknown", null),
+        meta = nativeNetworkEvidenceMeta(EvidenceId("ev_${randomId()}"), sessions.load()),
         requestId = id,
         request = NetworkRequest(request.method, request.url, request.headers, request.body.takeIf { it.isNotEmpty() }),
         response = response?.let { NetworkResponse(it.status, it.headers.mapValues { v -> v.value.joinToString(", ") }, it.body.takeIf(String::isNotEmpty)) },
