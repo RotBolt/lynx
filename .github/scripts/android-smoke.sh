@@ -2,10 +2,6 @@
 set -euo pipefail
 set -x
 
-python3 dummyapp/test-server/server.py >/tmp/lynx-android-fixture-server.log 2>&1 &
-SERVER_PID=$!
-trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
-
 timeout 30 adb wait-for-device
 timeout 30 adb shell getprop sys.boot_completed | grep -q 1
 
