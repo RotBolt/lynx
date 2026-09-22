@@ -158,7 +158,9 @@ class PosixNativeNetworkInspector(
                 val responseBody = readUntilClose(upstream)
                 val responseRaw = responseHead + responseBody
                 sendBytes(client, responseRaw.encodeToByteArray())
-                val response = responseHeadValue.copy(body = responseBody)
+                val response = responseHeadValue.copy(
+                    body = NativeHttpBodyDecoder.decode(responseHeadValue.headers, responseBody),
+                )
                 store.append(exchange(request, requestId, response, null, started))
             } finally { close(upstream) }
         } catch (t: Throwable) {
@@ -254,7 +256,8 @@ class PosixNativeNetworkInspector(
                 } else {
                     val responseBody = upstreamReader.readUntilClose()
                     downstream.write((responseHead + responseBody).encodeToByteArray())
-                    store.append(exchange(observedRequest, requestId, response.copy(body = responseBody), null, started))
+                    val capturedBody = NativeHttpBodyDecoder.decode(response.headers, responseBody)
+                    store.append(exchange(observedRequest, requestId, response.copy(body = capturedBody), null, started))
                 }
             } finally {
                 if (!upstreamClosed) upstream.close()
