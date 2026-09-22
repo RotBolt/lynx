@@ -4,6 +4,29 @@ These tickets implement [MILESTONES.md](MILESTONES.md) and the architecture in
 `ARCHITECTURE.md` and `IMPLEMENTATION.md`. Each ticket is intentionally scoped
 to one reviewable change and has an explicit verification gate.
 
+## M1.1 — Native correctness follow-up (all planned)
+
+Detailed file maps, acceptance tests, dependencies and checkpoint rules are in the
+[master implementation plan](../docs/superpowers/plans/2026-09-22-native-inspection-hardening.md).
+Each ticket depends on the previous row; 00 has no dependency.
+
+| Ticket | Scope | Acceptance gate |
+|---|---|---|
+| M1.1-00 | Baseline and external evidence harness | V0: both apps, DB and real H1/H2/WSS |
+| M1.1-01 | Real socket ownership feasibility | V1: target and same-destination non-target |
+| M1.1-02 | Native tool resolution | V2 resolver cases + V0 |
+| M1.1-03 | Unified devices, doctor, first run | V2 + V0 |
+| M1.1-04 | Isolated capture storage/context | V3 + V0 |
+| M1.1-05 | Worker/proxy lifecycle recovery | V4 + V0 |
+| M1.1-06 | Certificate issuance diagnostics/fix | V5 + V0 |
+| M1.1-07 | iOS Simulator admission/ownership | V6 iOS + V0 both |
+| M1.1-08 | Android relay/ownership | V6 Android + V0 both |
+| M1.1-09 | Session catalog, snapshot, scoped list/get | V7 + V6 both + V0 |
+| M1.1-10 | Extracted distribution and agent docs | V8 |
+
+No ticket may be marked complete from unit tests alone; follow the master plan's
+real-device/simulator regression and committed-tree checkpoint procedure.
+
 ## M1-01 — Versioned daemon command envelope
 **Status:** Implemented
 

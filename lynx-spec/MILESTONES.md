@@ -1,5 +1,19 @@
 # Lynx Milestones
 
+## M1.1 — Native app-scoped inspection correctness (planned)
+
+**Status:** Planned; no implementation or fresh runtime verification claimed.
+
+Deliver attached-device/application-only capture, explicit capture sessions,
+automatic host-tool discovery, combined Android/iOS Simulator inventory and
+reliable proxy/TLS lifecycle. Preserve database and real H1/H2/WSS behavior.
+
+The [implementation plan](../docs/superpowers/plans/2026-09-22-native-inspection-hardening.md)
+defines tickets M1.1-00 through M1.1-10, verification gates and local commit/checkpoints.
+The [contract](../docs/superpowers/specs/2026-09-22-app-scoped-native-inspection.md)
+defines ownership and command semantics. Execute sequentially; CI stays deferred.
+Existing M1 completion statements below do not establish native implementation parity.
+
 ## M1 — Agent-Debuggable Network and Database MVP
 
 **Goal:** An AI agent can attach to a debuggable Android app, observe routed
