@@ -51,7 +51,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
     @objc private func callHttp1() {
-        request(URL(string: "http://httpbin.org/get?source=lynx-sample-http1")!, kind: "HTTP_1_1")
+        request(URL(string: "https://http1.testserver.host/anything?source=lynx-sample-http1")!, kind: "HTTP_1_1")
     }
 
     @objc private func callHttp2() {

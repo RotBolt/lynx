@@ -27,7 +27,7 @@ actual fun nativeTlsProvider(): NativeTlsProvider = object : NativeTlsProvider {
     init { OPENSSL_init_ssl(0u, null) }
     override fun server(clientFd: Int, certificatePath: String, privateKeyPath: String, enableHttp2: Boolean): NativeTlsConnection = memScoped {
         val context = SSL_CTX_new(TLS_server_method()) ?: error("unable to create TLS server context")
-        if (enableHttp2) lynx_ssl_enable_h2_server(context)
+        if (enableHttp2) lynx_ssl_enable_h2_server(context) else lynx_ssl_enable_http1_server(context)
         require(SSL_CTX_use_certificate_file(context, certificatePath, PEM) == 1)
         require(SSL_CTX_use_PrivateKey_file(context, privateKeyPath, PEM) == 1)
         val ssl = SSL_new(context) ?: error("unable to create TLS server session")
@@ -41,6 +41,7 @@ actual fun nativeTlsProvider(): NativeTlsProvider = object : NativeTlsProvider {
         require(SSL_set_fd(ssl, upstreamFd) == 1)
         require(lynx_ssl_set_sni(ssl, serverName) == 1) { "unable to set upstream TLS server name" }
         if (enableHttp2) require(lynx_ssl_enable_h2_client(ssl) == 0)
+        else require(lynx_ssl_enable_http1_client(ssl) == 0)
         require(SSL_connect(ssl) == 1) { "TLS upstream handshake failed: ${sslError()}" }
         OpenSslConnection(upstreamFd, ssl, context, if (lynx_ssl_is_h2(ssl) == 1) "h2" else null)
     }

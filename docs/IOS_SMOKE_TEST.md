@@ -64,10 +64,14 @@ $LYNX network list --json
 The verified run produced these exchange classes:
 
 ```text
-GET http://httpbin.org/get                     200  HTTP/1.1
+GET https://http1.testserver.host/anything?... 200  HTTP/1.1
 GET https://jsonplaceholder.typicode.com/...   200  HTTP/2
 GET https://ws.postman-echo.com/raw             101  WebSocket
 ```
+
+The HTTP/1.1 case is HTTPS: `http1.testserver.host` is a public test endpoint
+that negotiates HTTP/1.1 via ALPN. This verifies TLS interception and HTTP/1.1
+capture together, not only cleartext HTTP/1.1 forwarding.
 
 The exact HTTP status can vary with the public endpoints; the protocol and
 request/response evidence are the assertions. Use `network get <request_id>`

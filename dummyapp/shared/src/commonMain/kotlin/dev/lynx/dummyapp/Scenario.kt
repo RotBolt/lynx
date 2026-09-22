@@ -47,7 +47,7 @@ interface SampleScenario {
 data class ScenarioEndpoints(
     // Calls go directly through the platform's ordinary networking stack.
     // No app-level proxy configuration is used.
-    val http1: String = "http://httpbin.org/get?source=lynx-sample-http1",
+    val http1: String = "https://http1.testserver.host/anything?source=lynx-sample-http1",
     val http2: String = "https://jsonplaceholder.typicode.com/todos/1?source=lynx-sample-http2",
     val websocket: String = "wss://ws.postman-echo.com/raw",
 )

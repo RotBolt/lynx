@@ -81,10 +81,11 @@ Supported protocol evidence:
 - WebSocket upgrade and frames (`protocol: "WebSocket"`).
 
 On iOS Simulator, `network start` applies the Lynx proxy to the macOS Wi-Fi
-service. Stop capture when finished so the host proxy is restored. The iOS
-sample app uses public endpoints (`httpbin.org`, `jsonplaceholder.typicode.com`,
-and `ws.postman-echo.com`) because private-address and localhost bypass cases
-are not yet supported by the simulator adapter.
+service. Stop capture when finished so the host proxy is restored. The sample
+app uses public endpoints (`http1.testserver.host` for HTTPS/HTTP/1.1,
+`jsonplaceholder.typicode.com` for HTTPS/HTTP/2, and `ws.postman-echo.com` for
+WSS) because private-address and localhost bypass cases are not yet supported
+by the simulator adapter.
 
 On Android, after `network start` applies the device-wide proxy, force-stop and
 relaunch an app that was already running before capture began, then trigger its

@@ -39,7 +39,8 @@ The app performs no network requests on launch, on a timer, or as a combined
 scenario. The UI exposes independent controls so each transport can be tested
 without producing unrelated traffic:
 
-- **HTTP/1.1 Call** makes one plain HTTP/1.1 request.
+- **HTTP/1.1 Call** makes one HTTPS request to a server that negotiates
+  HTTP/1.1 via ALPN, exercising TLS interception and HTTP/1.1 capture together.
 - **HTTP/2 Call** makes one HTTPS request intended to negotiate HTTP/2 through
   ALPN.
 - **WebSocket Start** opens a TLS WebSocket and sends one echo message;

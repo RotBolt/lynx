@@ -6,12 +6,13 @@ inspection. It is separate from the production Lynx modules.
 Status: 🚧 under construction.
 
 The app has Android and iOS Simulator targets. On explicit button presses it
-makes ordinary app-origin requests to public services: HTTP/1.1 to HTTPBin,
-HTTPS (negotiated as HTTP/2 when the platform supports it) to JSONPlaceholder,
-and a TLS WebSocket echo to Postman Echo. The WebSocket has separate Start and
-Close controls. No network request is made on launch or on a timer, and the app
-does not configure a proxy. Mock responses are confined to unit tests; there is
-no local fixture server in the sample app.
+makes ordinary app-origin requests to public services: HTTPS/HTTP/1.1 to the
+HTTP Toolkit public HTTP test server, HTTPS (negotiated as HTTP/2 when the
+platform supports it) to JSONPlaceholder, and a TLS WebSocket echo to Postman
+Echo. The WebSocket has separate Start and Close controls. No network request
+is made on launch or on a timer, and the app does not configure a proxy. Mock
+responses are confined to unit tests; there is no local fixture server in the
+sample app.
 
 Build the iOS simulator app with `iosApp/build-simulator.sh`; it produces
 an installable `.app` bundle for the booted arm64 simulator.

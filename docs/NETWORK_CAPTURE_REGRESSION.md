@@ -2,6 +2,8 @@
 
 This regression uses the installed sample app and its explicit buttons. It does
 not use fixtures, a local server, app-level proxy code, or fabricated traffic.
+The HTTP/1.1 action uses a public HTTPS endpoint that negotiates HTTP/1.1, so
+the test exercises TLS interception as well as HTTP/1.1 parsing.
 The script starts Lynx capture, waits while the tester taps each button, then
 requires a new `network list` exchange with the expected transport and status.
 
@@ -45,7 +47,8 @@ echoed ping and tap **WebSocket Close** before continuing.
 Each action must append a new request ID after the prompt; old retained events
 cannot make the check pass. The script checks:
 
-- HTTP/1.1: successful HTTP response and `HTTP/1.1` protocol.
+- HTTPS/HTTP/1.1: `https://` URL, successful HTTP response, and `HTTP/1.1`
+  protocol.
 - HTTP/2: successful or `304 Not Modified` response and `HTTP/2` protocol.
 - WebSocket: `101 Switching Protocols`, `WebSocket` protocol, and the echoed
   `lynx-sample-ping` frame.

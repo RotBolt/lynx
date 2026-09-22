@@ -174,23 +174,44 @@ class PosixNativeNetworkInspector(
             sendBytes(client, "HTTP/1.1 200 Connection Established\r\nProxy-Agent: lynx\r\n\r\n".encodeToByteArray())
             val leaf = certificates.ensureLeaf(host)
             val tlsProvider = nativeTlsProvider()
-            // Negotiate with the app first so the upstream TLS session can offer the same
-            // application protocol. In particular, WSS clients may require HTTP/1.1 Upgrade;
-            // offering h2 upstream unconditionally would make the proxy send HTTP/1 bytes over
-            // a connection that negotiated HTTP/2.
-            val downstream = tlsProvider.server(client, leaf.certificate, leaf.privateKey, enableHttp2 = true)
+            // Negotiate with the origin first. A downstream client may prefer h2 even when the
+            // origin is HTTP/1.1-only; choose the downstream ALPN based on the origin so we never
+            // advertise h2 to the app and then fail the upstream handshake.
             val upstreamFd = connect(host, port)
-            val downstreamUsesHttp2 = downstream.applicationProtocol == "h2"
-            val upstream = try {
-                tlsProvider.client(upstreamFd, host, enableHttp2 = downstreamUsesHttp2)
+            var upstream = try {
+                tlsProvider.client(upstreamFd, host, enableHttp2 = true)
             } catch (error: Throwable) {
-                downstream.close()
                 close(upstreamFd)
                 throw error
             }
+            val upstreamUsesHttp2 = upstream.applicationProtocol == "h2"
+            val downstream = try {
+                tlsProvider.server(client, leaf.certificate, leaf.privateKey, enableHttp2 = upstreamUsesHttp2)
+            } catch (error: Throwable) {
+                upstream.close()
+                throw error
+            }
+            var upstreamClosed = false
             try {
-                val upstreamUsesHttp2 = upstream.applicationProtocol == "h2"
-                require(downstreamUsesHttp2 == upstreamUsesHttp2) {
+                val downstreamUsesHttp2 = downstream.applicationProtocol == "h2"
+                var negotiatedUpstreamUsesHttp2 = upstreamUsesHttp2
+                if (negotiatedUpstreamUsesHttp2 && !downstreamUsesHttp2) {
+                    // WebSocket clients commonly negotiate HTTP/1.1 even when the origin also
+                    // supports h2. Reconnect upstream with HTTP/1.1 so the HTTP/1.1 Upgrade is
+                    // preserved end-to-end instead of relaying an incompatible h2 TLS session.
+                    upstream.close()
+                    upstreamClosed = true
+                    val http1Fd = connect(host, port)
+                    upstream = try {
+                        tlsProvider.client(http1Fd, host, enableHttp2 = false)
+                    } catch (error: Throwable) {
+                        close(http1Fd)
+                        throw error
+                    }
+                    upstreamClosed = false
+                    negotiatedUpstreamUsesHttp2 = upstream.applicationProtocol == "h2"
+                }
+                require(downstreamUsesHttp2 == negotiatedUpstreamUsesHttp2) {
                     "TLS application protocol mismatch: app negotiated ${downstream.applicationProtocol ?: "HTTP/1.1"}, " +
                         "origin negotiated ${upstream.applicationProtocol ?: "HTTP/1.1"}"
                 }
@@ -235,7 +256,10 @@ class PosixNativeNetworkInspector(
                     downstream.write((responseHead + responseBody).encodeToByteArray())
                     store.append(exchange(observedRequest, requestId, response.copy(body = responseBody), null, started))
                 }
-            } finally { upstream.close(); downstream.close() }
+            } finally {
+                if (!upstreamClosed) upstream.close()
+                downstream.close()
+            }
         } catch (t: Throwable) {
             store.append(NetworkExchange(EvidenceMeta(EvidenceId("ev_${randomId()}"), SessionId("native"), kotlin.time.Clock.System.now(), EvidenceSource.NETWORK, "native", "unknown", null), requestId, NetworkRequest("CONNECT", "https://$host", emptyMap(), null), null, NetworkFailure("HTTPS_MITM_ERROR", t.message), NetworkTiming(started, getTimeMillis(), getTimeMillis() - started), NetworkCaptureMetadata(false, 0, false), protocol = "HTTPS"))
         }

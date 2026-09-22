@@ -79,16 +79,18 @@ assert_capture() {
     .protocol == $protocol and
     .failure == null and
     (if $mode == "websocket" then
+       (.request.url | startswith("wss://")) and
        .response.status == 101 and
        ([.frames[]?.payload] | any(. == "lynx-sample-ping"))
      else
+       (.request.url | startswith("https://")) and
        (if $status_test == "success_or_not_modified" then
           (.response.status >= 200 and .response.status < 300) or .response.status == 304
         else .response.status == ($status_test | tonumber)
         end)
      end)
   ' <<<"$event" >/dev/null; then
-    echo "FAIL $label: latest exchange did not match the expected protocol/status: $event" >&2
+    echo "FAIL $label: latest exchange did not match the expected HTTPS/protocol/status contract: $event" >&2
     return 1
   fi
 

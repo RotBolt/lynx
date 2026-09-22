@@ -17,7 +17,8 @@ class ScenarioTest {
     fun defaultScenarioUsesPublicInternetEndpointsForEveryTransport() {
         val endpoints = ScenarioEndpoints()
 
-        assertEquals("http://httpbin.org/get?source=lynx-sample-http1", endpoints.http1)
+        assertEquals("https://http1.testserver.host/anything?source=lynx-sample-http1", endpoints.http1)
+        assertEquals(true, endpoints.http1.startsWith("https://"))
         assertEquals("https://jsonplaceholder.typicode.com/todos/1?source=lynx-sample-http2", endpoints.http2)
         assertEquals("wss://ws.postman-echo.com/raw", endpoints.websocket)
         assertEquals(false, listOf(endpoints.http1, endpoints.http2, endpoints.websocket)
