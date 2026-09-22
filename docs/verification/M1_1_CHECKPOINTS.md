@@ -9,6 +9,7 @@ certificates and traffic remain under ignored `build/verification/` directories.
 | M1.1-00 | `0e800e8` | pass | pass | pass | pass | pass | pass | restored | pass; committed harness run `committed-20260922-174017` |
 | M1.1-01 | pending | pass: API 17 emulator, shell relay and `run-as` FD/inode proof | pass: booted iOS 26.4 Simulator, libproc tuple/process proof | pass | pass | pass | pass | Android proxy/reverse/helper and macOS proxy restored | pass for recorded emulator/simulator scope; API 26, physical Android, PID-race and IPv6 device rows pending |
 | M1.1-02 | pending | pass: API 17 emulator database snapshot | pass: booted iOS 26.4 Simulator database snapshot | source/snapshot rows matched on both platforms | pass | pass | pass | Android proxy `:0`, no reverse mappings, macOS web and secure-web proxies restored | pass; tool resolution and subprocess diagnostics covered by native tests |
+| M1.1-03 | pending | pass: API 17 emulator listed as attachable | pass: booted iOS 26.4 Simulator listed as attachable; shutdown simulators retained but not attachable | source/snapshot rows matched on both platforms | pass | pass | pass | Android proxy `:0`, no reverse mappings, macOS web and secure-web proxies restored | pass for macOS discovery; Linux iOS is explicitly not applicable |
 
 Use `pass`, `fail`, `blocked`, or `not_run`; never replace a missing live row
 with an old result or a local fixture.
@@ -44,3 +45,16 @@ with an old result or a local fixture.
   HTTP 101 and echoed `lynx-sample-ping`; raw capture material stays ignored.
 - After the live run, Android proxy was `:0`, no ADB reverse mappings remained,
   and macOS web and secure-web proxy before/after files matched.
+
+## M1.1-03 pre-commit evidence
+
+- Native inventory tests cover Android online/unauthorized/offline rows,
+  independent provider diagnostics, exact attachment joins, and clean JSON
+  device/doctor responses.
+- Live `devices --json` and `doctor --json` passed with the Android 17 emulator,
+  booted iOS 26.4 Simulator, shutdown simulator rows, and resolved ADB/Xcode/
+  simctl/sqlite3/OpenSSL paths. Evidence is in
+  `build/verification/m1-1/03/20260922-230110`.
+- Full V0 again matched Android/iOS source and snapshot query rows, completed
+  both WebSocket smokes, restored macOS web/secure-web proxies, left Android at
+  proxy `:0`, and left no ADB reverse mappings.

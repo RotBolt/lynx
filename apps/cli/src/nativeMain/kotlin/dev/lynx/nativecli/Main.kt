@@ -12,21 +12,38 @@ import dev.lynx.model.RequestId
 import kotlinx.serialization.json.*
 
 expect fun nativeProcessRunner(): NativeProcessRunner
+expect fun nativeHostToolResolver(): dev.lynx.nativehost.HostToolResolver
 expect fun nativeSessionStore(): dev.lynx.nativehost.NativeSessionStore
 expect fun nativeCertificateManager(): dev.lynx.nativehost.NativeCertificateManager
 
 fun main(args: Array<String>) {
-    NativeCli(nativeProcessRunner(), nativeNetworkBackend()).run(args.toList())
+    val runner = nativeProcessRunner()
+    val tools = nativeHostToolResolver()
+    NativeCli(
+        runner, nativeNetworkBackend(), tools,
+        inventory = {
+            dev.lynx.nativehost.DeviceInventoryService(
+                listOf(dev.lynx.nativehost.AndroidDeviceProvider(runner), dev.lynx.nativehost.IosSimulatorDeviceProvider(runner, tools)),
+                tools, nativeSessionStore().load(),
+            ).discover()
+        },
+    ).run(args.toList())
 }
 
-class NativeCli(private val runner: NativeProcessRunner, private val network: NativeNetworkBackend) {
+class NativeCli(
+    private val runner: NativeProcessRunner,
+    private val network: NativeNetworkBackend,
+    private val tools: dev.lynx.nativehost.HostToolResolver = dev.lynx.nativehost.HostToolResolver { dev.lynx.nativehost.ResolvedTool(it, dev.lynx.nativehost.ToolStatus.MISSING, null, null, "tool resolver unavailable") },
+    private val inventory: () -> dev.lynx.nativehost.DeviceInventory = { dev.lynx.nativehost.DeviceInventory(emptyList(), emptyList(), emptyList()) },
+) {
     private val json = Json { encodeDefaults = true; prettyPrint = false }
     private val sessions = dev.lynx.nativehost.NativeSessionManager(runner, nativeSessionStore()) { "session_${kotlin.time.Clock.System.now().toEpochMilliseconds()}" }
 
     fun run(args: List<String>) {
         when (args.firstOrNull()) {
             "--version", "version" -> println("lynx 0.1.0-SNAPSHOT")
-            "devices" -> printResult(runner.run(listOf("adb", "devices")))
+            "devices" -> println(HostDiagnosticsCommands(tools, inventory).devices("--json" in args, option(args, "--platform")))
+            "doctor" -> println(HostDiagnosticsCommands(tools, inventory).doctor("--json" in args))
             "attach" -> {
                 val device = args.getOrNull(1) ?: error("device is required")
                 val packageName = args.getOrNull(2) ?: error("package is required")
@@ -43,7 +60,7 @@ class NativeCli(private val runner: NativeProcessRunner, private val network: Na
             }
             "db" -> runDatabase(args.drop(1))
             "network" -> runNetwork(args.drop(1))
-            else -> println("Usage: lynx [--version|devices|db ...|network start|stop|list|get|doctor]")
+            else -> println("Usage: lynx [--version|doctor|devices|db ...|network start|stop|list|get]")
         }
     }
 

@@ -55,13 +55,14 @@ database, JSON, and network-evidence workflow without assuming a particular
 editor or model.
 
 Linux x64 users can substitute `lynx-linux-x64.tar.gz` in the download URL.
-The host must have Android SDK platform-tools (`adb`) on `PATH` for Android
-inspection.
+Lynx discovers Android SDK platform-tools from SDK configuration, standard
+locations, or `PATH`; use `lynx doctor --json` for exact diagnostics.
 
 Attach to a debuggable app and inspect its database:
 
 ```bash
 lynx devices
+lynx doctor --json
 lynx attach emulator-5554 dev.lynx.dummyapp
 lynx status
 lynx db list --platform android --device emulator-5554 \

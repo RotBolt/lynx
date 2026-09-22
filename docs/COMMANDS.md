@@ -12,6 +12,8 @@ LYNX=lynx
 
 ```bash
 $LYNX devices
+$LYNX devices --platform android --json
+$LYNX doctor --json
 $LYNX --version
 $LYNX network ca show --json
 ```
@@ -19,6 +21,10 @@ $LYNX network ca show --json
 Download and installation instructions are in
 [native distribution](distribution/native.md). No JVM or repository checkout
 is required at runtime.
+
+`devices --json` combines Android devices and macOS iOS Simulators, retaining
+offline/unauthorized rows. `doctor --json` revalidates tool paths and versions.
+Lynx never edits shell profiles.
 
 ## JVM compatibility backend
 

@@ -20,7 +20,10 @@ kotlin {
 
     sourceSets {
         val commonMain by getting {
-            dependencies { api(project(":core:model")) }
+            dependencies {
+                api(project(":core:model"))
+                implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
+            }
         }
         val posixMain by creating { dependsOn(commonMain) }
         val macosArm64Main by getting { dependsOn(posixMain) }

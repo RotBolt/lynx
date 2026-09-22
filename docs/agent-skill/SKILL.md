@@ -16,7 +16,8 @@ or attach again when the target changes.
 
    ```bash
    lynx --version
-   lynx devices
+   lynx doctor --json
+   lynx devices --json
    ```
 
 2. Attach to the debuggable app. Android uses the device serial and package;
@@ -30,6 +31,9 @@ or attach again when the target changes.
 
 3. Keep the attach session alive while using database snapshots and queries.
    A snapshot is session-owned and cannot be queried after detach.
+
+`devices --json` reports Android and iOS Simulator availability together. Use
+its stable `id`; do not attach a shutdown or unavailable simulator.
 
 ## Database investigation
 
