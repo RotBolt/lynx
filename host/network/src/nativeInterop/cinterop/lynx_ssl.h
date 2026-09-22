@@ -28,6 +28,10 @@ static inline int lynx_ssl_enable_h2_client(LYNSsl *ssl) {
   return SSL_set_alpn_protos(ssl, protocols, sizeof(protocols));
 }
 
+static inline int lynx_ssl_set_sni(LYNSsl *ssl, const char *hostname) {
+  return SSL_set_tlsext_host_name(ssl, hostname);
+}
+
 static inline int lynx_ssl_is_h2(const LYNSsl *ssl) {
   const unsigned char *selected = NULL; unsigned int length = 0;
   SSL_get0_alpn_selected(ssl, &selected, &length);

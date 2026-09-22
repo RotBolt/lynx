@@ -17,8 +17,8 @@ interface NativeNetworkStateStore {
     fun isRunning(): Boolean
     fun endpoint(): String?
     fun capabilities(): NetworkCapabilities?
-    fun setRunning(endpoint: String, capabilities: NetworkCapabilities, previousProxy: String? = null)
-    fun previousProxy(): String?
+    fun setRunning(endpoint: String, capabilities: NetworkCapabilities, previousProxy: Map<String, String?>? = null)
+    fun previousProxy(): Map<String, String?>?
     fun clearRunning()
     fun append(exchange: NetworkExchange)
     fun list(filter: NetworkFilter = NetworkFilter()): List<NetworkExchange>

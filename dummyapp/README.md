@@ -5,27 +5,21 @@ separate from the production Lynx modules.
 
 Status: 🚧 under construction.
 
-The fixture provides Android and iOS simulator targets and a deterministic
-local HTTP/1.1 + WebSocket server for Android. Start it from this directory
-with:
-
-```bash
-python3 test-server/server.py
-```
-
-The HTTPS/HTTP/2 call uses JSONPlaceholder. The iOS host uses public HTTP/1.1
-and WebSocket echo endpoints because the simulator bypasses private-address
-proxy traffic.
+The fixture provides Android and iOS simulator targets. It makes real requests
+only after a developer presses a button: plain HTTP/1.1 to HTTPBin,
+HTTPS/HTTP/2 to JSONPlaceholder, and TLS WebSocket echo to Postman Echo. The
+WebSocket has separate Start and Close controls. No local test server or
+application-level proxy setting is involved in the network capture path.
 
 Build the iOS simulator fixture with `iosApp/build-simulator.sh`; it produces
 an installable `.app` bundle for the booted arm64 simulator.
 
-The fixture’s iOS app and SQLite writes are verified with `xcrun simctl`. Lynx’s
-simulator target, host-proxy lifecycle, and read-only SQLite inspection are now
-available. The verified simulator run captures HTTP/1.1, HTTP/2, and WebSocket
-traffic and reads the corresponding rows from `Documents/dummyapp.db`. Full
-simulator transport parity (especially localhost bypasses and system traffic
-filtering) remains 🚧 under construction.
+Each button runs only its corresponding request; there are no startup calls,
+timers, or overlapping background scenarios. The app persists actual URLs,
+statuses, response bodies, and errors to `network_events` for database
+inspection. Start Lynx capture before pressing the desired button. Public
+service availability and response status can vary; the validation is whether
+Lynx captures the app-origin request and negotiated protocol.
 
 Example iOS inspection flow:
 
@@ -39,7 +33,7 @@ xcrun simctl install "$UDID" iosApp/build/Debug-iphonesimulator/LynxDummyApp.app
 $LYNX attach --device ios-simulator:$UDID --package dev.lynx.dummyapp --json
 $LYNX network ca install --ios-simulator "$UDID" --json
 $LYNX network start --json
-# Relaunch the app after the proxy is active, then wait for its scenario.
+# Relaunch the app after the proxy is active, then press the desired protocol button.
 xcrun simctl terminate "$UDID" dev.lynx.dummyapp || true
 xcrun simctl launch "$UDID" dev.lynx.dummyapp
 sleep 10
@@ -52,9 +46,9 @@ $LYNX db query --snapshot <snapshot-id> \
 $LYNX network stop --json
 ```
 
-Expected network evidence contains one `HTTP/1.1`, one `HTTP/2`, and one
-`WebSocket` exchange. Expected database evidence contains rows for
-`HTTP_1_1`, `HTTP_2`, and `WEBSOCKET`. The certificate installation command
+Expected network evidence contains an exchange for each button pressed.
+Expected database evidence contains rows for `HTTP_1_1`, `HTTP_2`, and
+`WEBSOCKET` after the corresponding buttons are used. The certificate installation command
 may require explicit user trust confirmation in the Simulator.
 
 For a copyable end-to-end smoke test with prerequisites and cleanup, see

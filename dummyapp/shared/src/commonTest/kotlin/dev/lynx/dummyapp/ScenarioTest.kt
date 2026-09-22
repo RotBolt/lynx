@@ -14,6 +14,17 @@ import kotlinx.coroutines.runBlocking
 
 class ScenarioTest {
     @Test
+    fun defaultScenarioUsesPublicInternetEndpointsForEveryTransport() {
+        val endpoints = ScenarioEndpoints()
+
+        assertEquals("http://httpbin.org/get?source=lynx-dummy-http1", endpoints.http1)
+        assertEquals("https://jsonplaceholder.typicode.com/todos/1?source=lynx-dummy-http2", endpoints.http2)
+        assertEquals("wss://ws.postman-echo.com/raw", endpoints.websocket)
+        assertEquals(false, listOf(endpoints.http1, endpoints.http2, endpoints.websocket)
+            .any { it.contains("10.0.2.2") || it.contains("localhost") || it.contains("127.0.0.1") })
+    }
+
+    @Test
     fun durationIsDerivedFromTimestamps() {
         val result = ExchangeResult(
             transport = TransportKind.HTTP_2,
@@ -31,7 +42,7 @@ class ScenarioTest {
     }
 
     @Test
-    fun runOnceRecordsHttpOneHttpTwoAndWebSocketOutcomes() = runBlocking {
+    fun eachHttpActionRecordsOnlyItsOwnExchange() = runBlocking {
         val store = RecordingExchangeStore()
         val client = HttpClient(MockEngine) {
             install(WebSockets)
@@ -54,17 +65,20 @@ class ScenarioTest {
             ),
         )
 
-        val results = scenario.runOnce()
+        val http1 = scenario.requestHttp1()
+        assertEquals(1, store.values.size)
+        assertEquals(TransportKind.HTTP_1_1, store.values.single().transport)
+
+        val http2 = scenario.requestHttp2()
         client.close()
 
-        assertEquals(listOf(TransportKind.HTTP_1_1, TransportKind.HTTP_2, TransportKind.WEBSOCKET), results.map { it.transport })
-        assertEquals(results, store.values)
-        assertEquals(200, results[0].status)
-        assertEquals("{\"path\":\"/http1\"}", results[0].responseBody)
-        assertEquals(200, results[1].status)
-        assertEquals("{\"path\":\"/http2\"}", results[1].responseBody)
-        assertNotNull(results[2].error)
-        assertEquals("lynx-dummy-ping", results[2].requestBody)
+        assertEquals(TransportKind.HTTP_1_1, http1.transport)
+        assertEquals(200, http1.status)
+        assertEquals("{\"path\":\"/http1\"}", http1.responseBody)
+        assertEquals(TransportKind.HTTP_2, http2.transport)
+        assertEquals(200, http2.status)
+        assertEquals("{\"path\":\"/http2\"}", http2.responseBody)
+        assertEquals(listOf(TransportKind.HTTP_1_1, TransportKind.HTTP_2), store.values.map { it.transport })
     }
 
     private class RecordingExchangeStore : ExchangeStore {

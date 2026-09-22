@@ -19,7 +19,11 @@ import platform.posix.fputs
 import platform.posix.remove
 
 @Serializable
-private data class RuntimeState(val endpoint: String, val capabilities: NetworkCapabilities, val previousProxy: String? = null)
+private data class RuntimeState(
+    val endpoint: String,
+    val capabilities: NetworkCapabilities,
+    val previousProxy: Map<String, String?>? = null,
+)
 
 /** JSONL evidence store. Files are intentionally plain and portable across native processes. */
 @OptIn(ExperimentalForeignApi::class)
@@ -35,11 +39,11 @@ class PosixNativeNetworkStateStore(
     override fun endpoint(): String? = readState()?.endpoint
     override fun capabilities(): NetworkCapabilities? = readState()?.capabilities
 
-    override fun setRunning(endpoint: String, capabilities: NetworkCapabilities, previousProxy: String?) {
+    override fun setRunning(endpoint: String, capabilities: NetworkCapabilities, previousProxy: Map<String, String?>?) {
         ensureRoot()
         writeText(statePath, json.encodeToString(RuntimeState.serializer(), RuntimeState(endpoint, capabilities, previousProxy)))
     }
-    override fun previousProxy(): String? = readState()?.previousProxy
+    override fun previousProxy(): Map<String, String?>? = readState()?.previousProxy
 
     override fun clearRunning() { remove(statePath) }
 

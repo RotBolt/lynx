@@ -4,8 +4,10 @@ import kotlinx.coroutines.flow.Flow
 import io.ktor.client.HttpClient
 import io.ktor.client.request.get
 import io.ktor.client.statement.bodyAsText
-import io.ktor.client.plugins.websocket.webSocket
+import io.ktor.client.plugins.websocket.webSocketSession
 import io.ktor.websocket.Frame
+import io.ktor.websocket.WebSocketSession
+import io.ktor.websocket.close
 import io.ktor.websocket.readText
 import io.ktor.websocket.send
 
@@ -36,13 +38,19 @@ interface ExchangeStore {
 }
 
 interface DummyScenario {
-    suspend fun runOnce(): List<ExchangeResult>
+    suspend fun requestHttp1(): ExchangeResult
+    suspend fun requestHttp2(): ExchangeResult
+    suspend fun startWebSocket(): ExchangeResult
+    suspend fun closeWebSocket()
 }
 
 data class ScenarioEndpoints(
-    val http1: String = "http://10.0.2.2:8080/health",
-    val http2: String = "https://jsonplaceholder.typicode.com/todos/1",
-    val websocket: String = "ws://10.0.2.2:8080/ws",
+    // These are public services, not the local fixture server. The first URL
+    // intentionally stays cleartext to exercise HTTP/1.1; the second exercises
+    // HTTPS/HTTP/2, and Postman Echo provides a public TLS WebSocket echo.
+    val http1: String = "http://httpbin.org/get?source=lynx-dummy-http1",
+    val http2: String = "https://jsonplaceholder.typicode.com/todos/1?source=lynx-dummy-http2",
+    val websocket: String = "wss://ws.postman-echo.com/raw",
 )
 
 class KtorDummyScenario(
@@ -50,11 +58,11 @@ class KtorDummyScenario(
     private val store: ExchangeStore,
     private val endpoints: ScenarioEndpoints = ScenarioEndpoints(),
 ) : DummyScenario {
-    override suspend fun runOnce(): List<ExchangeResult> = listOf(
-        executeHttp(TransportKind.HTTP_1_1, endpoints.http1),
-        executeHttp(TransportKind.HTTP_2, endpoints.http2),
-        executeWebSocket(endpoints.websocket),
-    )
+    private var websocket: WebSocketSession? = null
+
+    override suspend fun requestHttp1(): ExchangeResult = executeHttp(TransportKind.HTTP_1_1, endpoints.http1)
+
+    override suspend fun requestHttp2(): ExchangeResult = executeHttp(TransportKind.HTTP_2, endpoints.http2)
 
     private suspend fun executeHttp(transport: TransportKind, url: String): ExchangeResult {
         val started = currentEpochMillis()
@@ -67,18 +75,24 @@ class KtorDummyScenario(
         }.also { store.append(it) }
     }
 
-    private suspend fun executeWebSocket(url: String): ExchangeResult {
+    override suspend fun startWebSocket(): ExchangeResult {
+        closeWebSocket()
+        val url = endpoints.websocket
         val started = currentEpochMillis()
         return try {
-            var echoed = ""
-            client.webSocket(urlString = url) {
-                send("lynx-dummy-ping")
-                echoed = (incoming.receive() as? Frame.Text)?.readText().orEmpty()
-            }
+            val session = client.webSocketSession(urlString = url)
+            websocket = session
+            session.send("lynx-dummy-ping")
+            val echoed = (session.incoming.receive() as? Frame.Text)?.readText().orEmpty()
             ExchangeResult(TransportKind.WEBSOCKET, "GET", url, 101, "lynx-dummy-ping", echoed, null, started, currentEpochMillis())
         } catch (error: Throwable) {
             ExchangeResult(TransportKind.WEBSOCKET, "GET", url, null, "lynx-dummy-ping", null, error.message ?: error::class.simpleName, started, currentEpochMillis())
         }.also { store.append(it) }
+    }
+
+    override suspend fun closeWebSocket() {
+        websocket?.close()
+        websocket = null
     }
 
 }

@@ -46,11 +46,25 @@ object NativeHttpParser {
     /** Converts a forward-proxy request line to the origin-form expected upstream. */
     fun originFormRequest(raw: String, request: Request): String {
         val lineEnd = raw.indexOf("\r\n")
-        if (lineEnd < 0 || (!request.url.startsWith("http://") && !request.url.startsWith("https://"))) return raw
+        val scheme = request.url.substringBefore("://", "")
+        if (lineEnd < 0 || scheme !in setOf("http", "https", "ws", "wss")) return raw
         val withoutScheme = request.url.substringAfter("://")
         val slash = withoutScheme.indexOf('/')
         val path = if (slash >= 0) withoutScheme.substring(slash) else "/"
-        return "${request.method} $path ${request.version}" + raw.substring(lineEnd)
+        val headerEnd = raw.indexOf("\r\n\r\n", lineEnd)
+        require(headerEnd >= 0) { "HTTP headers are incomplete" }
+        val headers = raw.substring(lineEnd + 2, headerEnd).split("\r\n")
+        val isWebSocketUpgrade = headers.any { it.startsWith("Upgrade:", true) && it.substringAfter(':').trim().equals("websocket", true) } &&
+            headers.any { it.startsWith("Connection:", true) && it.substringAfter(':').split(',').any { token -> token.trim().equals("upgrade", true) } }
+        val forwardedHeaders = if (isWebSocketUpgrade) headers else headers
+            .filterNot { it.substringBefore(':').equals("Connection", true) || it.substringBefore(':').equals("Proxy-Connection", true) }
+            .plus("Connection: close")
+        return buildString {
+            append(request.method).append(' ').append(path).append(' ').append(request.version).append("\r\n")
+            forwardedHeaders.forEach { append(it).append("\r\n") }
+            append("\r\n")
+            append(raw.substring(headerEnd + 4))
+        }
     }
 
     private fun split(raw: String): Pair<String, String> {

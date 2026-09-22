@@ -13,6 +13,9 @@ class PosixNativeNetworkInspector(
     private val processes: NativeProcessRunner = PosixProcessRunner(),
     private val certificates: PosixNativeCertificateAuthority = PosixNativeCertificateAuthority(processes),
 ) : NativeNetworkInspector {
+    private val androidProxy = NativeAndroidProxyController(processes)
+    private val clientDispatcher = PosixNativeConnectionDispatcher()
+
     override fun execute(command: NetworkCommand): NetworkCommandResult = when (command) {
         is NetworkCommand.Start -> start(command.settings)
         NetworkCommand.Stop -> { restoreDeviceProxy(); store.clearRunning(); store.clearWorkerReady(); NetworkCommandResult.Stopped }
@@ -25,7 +28,7 @@ class PosixNativeNetworkInspector(
     private fun capabilities() = NetworkCapabilities(
         httpsMitm = true,
         supportedProtocols = listOf("HTTP/1.1", "HTTPS", "HTTP/2", "WebSocket"),
-        limitations = listOf("TLS WebSocket capture is not enabled"),
+        limitations = listOf("WebSocket over HTTP/2 (RFC 8441) is not enabled; TLS WebSocket capture requires HTTP/1.1 Upgrade"),
         proxyEndpoint = store.endpoint(),
         proxyStatus = if (store.isRunning()) "running" else "stopped",
         caCertificatePath = "${certificates.ensureCa()}",
@@ -37,7 +40,7 @@ class PosixNativeNetworkInspector(
         val port = if (settings.listenPort == 0) 62006 else settings.listenPort
         val endpoint = "${settings.listenHost}:$port"
         val caps = capabilities().copy(proxyEndpoint = endpoint, proxyStatus = "starting")
-        val previousProxy = applyDeviceProxy(port)
+        val previousProxy = applyDeviceProxy(port, settings.listenHost)
         store.clearWorkerReady()
         store.setRunning(endpoint, caps, previousProxy)
         // Launch the same native executable as a detached worker. Installers put `lynx` on PATH;
@@ -58,18 +61,19 @@ class PosixNativeNetworkInspector(
         throw IllegalStateException("native network worker did not become ready; install lynx on PATH or set LYNX_EXECUTABLE")
     }
 
-    private fun applyDeviceProxy(port: Int): String? {
+    private fun applyDeviceProxy(port: Int, listenHost: String): Map<String, String?>? {
         val session = sessions.load() ?: return null
-        val prefix = listOf("adb", "-s", session.deviceSerial, "shell", "settings")
-        val previous = processes.run(prefix + listOf("get", "global", "http_proxy")).stdout.trim().takeIf { it.isNotBlank() && it != "null" }
-        processes.run(prefix + listOf("put", "global", "http_proxy", "10.0.2.2:$port"))
-        return previous
+        val visibleHost = when {
+            session.deviceSerial.startsWith("emulator-") -> "10.0.2.2"
+            listenHost != "0.0.0.0" -> listenHost
+            else -> error("an explicit reachable --host is required for physical Android devices")
+        }
+        return androidProxy.apply(session.deviceSerial, visibleHost, port)
     }
 
     private fun restoreDeviceProxy() {
         val session = sessions.load() ?: return
-        val value = store.previousProxy()?.takeIf { it.isNotBlank() } ?: ":0"
-        processes.run(listOf("adb", "-s", session.deviceSerial, "shell", "settings", "put", "global", "http_proxy", value))
+        androidProxy.restore(session.deviceSerial, store.previousProxy())
     }
 
     /** Worker entrypoint. It accepts cleartext HTTP proxy requests and appends complete exchanges. */
@@ -92,7 +96,7 @@ class PosixNativeNetworkInspector(
         try {
             while (store.isRunning()) {
                 val client = accept(server, null, null)
-                if (client >= 0) handle(client) else usleep(50_000u)
+                if (client >= 0) clientDispatcher.dispatch { handle(client) } else usleep(50_000u)
             }
         } finally {
             store.clearWorkerReady()
@@ -144,28 +148,68 @@ class PosixNativeNetworkInspector(
         try {
             sendBytes(client, "HTTP/1.1 200 Connection Established\r\nProxy-Agent: lynx\r\n\r\n".encodeToByteArray())
             val leaf = certificates.ensureLeaf(host)
+            val tlsProvider = nativeTlsProvider()
+            // Negotiate with the app first so the upstream TLS session can offer the same
+            // application protocol. In particular, WSS clients may require HTTP/1.1 Upgrade;
+            // offering h2 upstream unconditionally would make the proxy send HTTP/1 bytes over
+            // a connection that negotiated HTTP/2.
+            val downstream = tlsProvider.server(client, leaf.certificate, leaf.privateKey, enableHttp2 = true)
             val upstreamFd = connect(host, port)
-            val upstream = nativeTlsProvider().client(upstreamFd)
-            val downstream = nativeTlsProvider().server(client, leaf.certificate, leaf.privateKey, enableHttp2 = upstream.applicationProtocol == "h2")
+            val downstreamUsesHttp2 = downstream.applicationProtocol == "h2"
+            val upstream = try {
+                tlsProvider.client(upstreamFd, host, enableHttp2 = downstreamUsesHttp2)
+            } catch (error: Throwable) {
+                downstream.close()
+                close(upstreamFd)
+                throw error
+            }
             try {
-                if (downstream.applicationProtocol == "h2" && upstream.applicationProtocol == "h2") {
+                val upstreamUsesHttp2 = upstream.applicationProtocol == "h2"
+                require(downstreamUsesHttp2 == upstreamUsesHttp2) {
+                    "TLS application protocol mismatch: app negotiated ${downstream.applicationProtocol ?: "HTTP/1.1"}, " +
+                        "origin negotiated ${upstream.applicationProtocol ?: "HTTP/1.1"}"
+                }
+                if (downstreamUsesHttp2) {
                     relayTlsHttp2(downstream, upstream, host, requestId, started)
                     return
                 }
-                val raw = readTlsHeaders(downstream)
+                val downstreamReader = NativeTlsBufferedReader(downstream)
+                val upstreamReader = NativeTlsBufferedReader(upstream)
+                val raw = downstreamReader.readHeaders()
                 val request = NativeHttpParser.parseRequest(raw)
                 val body = request.body
-                val path = request.url
+                val path = request.url.ifBlank { "/" }
+                val websocketUpgrade = request.headers.entries.any { (name, value) ->
+                    name.equals("Upgrade", true) && value.equals("websocket", true)
+                } && request.headers.entries.any { (name, value) ->
+                    name.equals("Connection", true) && value.split(',').any { it.trim().equals("upgrade", true) }
+                }
+                val scheme = if (websocketUpgrade) "wss" else "https"
+                val requestUrl = if (path.startsWith("https://") || path.startsWith("wss://")) path
+                    else "$scheme://$host${if (path.startsWith('/')) path else "/$path"}"
+                val observedRequest = request.copy(url = requestUrl)
                 val outbound = buildString {
                     append(request.method).append(' ').append(path).append(" HTTP/1.1\r\n")
-                    request.headers.filterKeys { !it.equals("Proxy-Connection", true) && !it.equals("Connection", true) }.forEach { (k, v) -> append(k).append(": ").append(v).append("\r\n") }
-                    append("Connection: close\r\n\r\n").append(body)
+                    request.headers.filterKeys { !it.equals("Proxy-Connection", true) && !it.equals("Proxy-Authorization", true) }
+                        .filterKeys { websocketUpgrade || !it.equals("Connection", true) }
+                        .forEach { (k, v) -> append(k).append(": ").append(v).append("\r\n") }
+                    if (!websocketUpgrade) append("Connection: close\r\n")
+                    append("\r\n").append(body)
                 }.encodeToByteArray()
                 upstream.write(outbound)
-                val responseRaw = readTlsUntilClose(upstream)
-                downstream.write(responseRaw.encodeToByteArray())
-                val response = NativeHttpParser.parseResponse(responseRaw)
-                store.append(exchange(request, requestId, response, null, started))
+                val responseHead = upstreamReader.readHeaders()
+                val response = NativeHttpParser.parseResponse(responseHead)
+                if (websocketUpgrade && response.status == 101 && response.headers.keys.any { it.equals("Upgrade", true) }) {
+                    downstream.write(responseHead.encodeToByteArray())
+                    relayTlsWebSocket(
+                        downstream, upstream, downstreamReader, upstreamReader,
+                        observedRequest, requestId, response.copy(body = ""), started,
+                    )
+                } else {
+                    val responseBody = upstreamReader.readUntilClose()
+                    downstream.write((responseHead + responseBody).encodeToByteArray())
+                    store.append(exchange(observedRequest, requestId, response.copy(body = responseBody), null, started))
+                }
             } finally { upstream.close(); downstream.close() }
         } catch (t: Throwable) {
             store.append(NetworkExchange(EvidenceMeta(EvidenceId("ev_${randomId()}"), SessionId("native"), kotlin.time.Clock.System.now(), EvidenceSource.NETWORK, "native", "unknown", null), requestId, NetworkRequest("CONNECT", "https://$host", emptyMap(), null), null, NetworkFailure("HTTPS_MITM_ERROR", t.message), NetworkTiming(started, getTimeMillis(), getTimeMillis() - started), NetworkCaptureMetadata(false, 0, false), protocol = "HTTPS"))
@@ -317,7 +361,20 @@ class PosixNativeNetworkInspector(
     )
 
     private fun failureExchange(client: Int, started: Long, message: String) = exchange(NativeHttpParser.Request("UNKNOWN", "http://unknown", "HTTP/1.1", emptyMap(), ""), RequestId("req_${randomId()}"), null, NetworkFailure("PROXY_ERROR", message), started)
-    private fun parseTarget(url: String, host: String?): Pair<String, Int> { val value = if (url.startsWith("http://")) url.removePrefix("http://") else host ?: error("proxy request has no Host header"); val authority = value.substringBefore('/'); val parts = authority.split(':', limit = 2); return parts[0] to (parts.getOrNull(1)?.toIntOrNull() ?: 80) }
+    private fun parseTarget(url: String, host: String?): Pair<String, Int> {
+        val value = when {
+            url.startsWith("http://") -> url.removePrefix("http://")
+            url.startsWith("ws://") -> url.removePrefix("ws://")
+            else -> host ?: error("proxy request has no Host header")
+        }
+        val authority = value.substringBefore('/')
+        val parts = authority.split(':', limit = 2)
+        // Android emulator traffic reaches the host through 10.0.2.2. Once the request is
+        // handled by Lynx on the host, the same special address is not routable back to the host;
+        // map it to loopback so local development servers remain reachable from the proxy.
+        val targetHost = parts[0].takeUnless { it == "10.0.2.2" } ?: "127.0.0.1"
+        return targetHost to (parts.getOrNull(1)?.toIntOrNull() ?: 80)
+    }
     private fun connect(host: String, port: Int): Int = memScoped { val hints = alloc<addrinfo>(); hints.ai_family = AF_UNSPEC; hints.ai_socktype = SOCK_STREAM; val result = allocPointerTo<addrinfo>(); require(getaddrinfo(host, port.toString(), hints.ptr, result.ptr) == 0); val info = result.value ?: error("unable to resolve $host"); val fd = socket(info.pointed.ai_family, info.pointed.ai_socktype, info.pointed.ai_protocol); require(fd >= 0); require(platform.posix.connect(fd, info.pointed.ai_addr, info.pointed.ai_addrlen) == 0); freeaddrinfo(info); fd }
     /** Read exactly through the header terminator. A bulk recv can consume the
      * beginning of a TLS ClientHello after CONNECT, so this intentionally reads
@@ -335,40 +392,188 @@ class PosixNativeNetworkInspector(
                 if (poll(pollers, 2u, 250) < 0) break
                 if (openClient && pollers[0].revents.toInt() and POLLIN != 0) {
                     val frame = readFrame(client) ?: run { openClient = false; continue }
-                    sendBytes(upstream, frame.bytes); frames += frame.evidence("client_to_server")
+                    sendBytes(upstream, frame.wireBytes); frames += frame.evidence("CLIENT_TO_SERVER")
                 }
                 if (openUpstream && pollers[1].revents.toInt() and POLLIN != 0) {
                     val frame = readFrame(upstream) ?: run { openUpstream = false; continue }
-                    sendBytes(client, frame.bytes); frames += frame.evidence("server_to_client")
+                    sendBytes(client, frame.wireBytes); frames += frame.evidence("SERVER_TO_CLIENT")
                 }
             }
         }
         store.append(exchange(request, id, response, null, started).copy(protocol = "WebSocket", frames = frames))
     }
 
-    private data class WsFrame(val bytes: ByteArray, val direction: String = "") {
-        fun evidence(direction: String): NetworkFrame {
-            val opcode = (bytes.firstOrNull()?.toInt()?.and(0x0f) ?: 0).toString()
-            return NetworkFrame(direction, opcode, bytes.drop(2).toByteArray().decodeToString())
+    private fun relayTlsWebSocket(
+        downstream: NativeTlsConnection,
+        upstream: NativeTlsConnection,
+        downstreamReader: NativeTlsBufferedReader,
+        upstreamReader: NativeTlsBufferedReader,
+        request: NativeHttpParser.Request,
+        id: RequestId,
+        response: NativeHttpParser.Response,
+        started: Long,
+    ) {
+        val frames = mutableListOf<NetworkFrame>()
+        memScoped {
+            val pollers = allocArray<pollfd>(2)
+            var downstreamOpen = true
+            var upstreamOpen = true
+            val deadline = getTimeMillis() + 15 * 60_000
+            while ((downstreamOpen || upstreamOpen) && getTimeMillis() < deadline) {
+                pollers[0].fd = downstream.fileDescriptor
+                pollers[0].events = POLLIN.toShort()
+                pollers[0].revents = 0
+                pollers[1].fd = upstream.fileDescriptor
+                pollers[1].events = POLLIN.toShort()
+                pollers[1].revents = 0
+                val downstreamReady = downstreamReader.hasBufferedBytes()
+                val upstreamReady = upstreamReader.hasBufferedBytes()
+                if (!downstreamReady && !upstreamReady && poll(pollers, 2u, 250) < 0) break
+                if (downstreamOpen && (downstreamReady || pollers[0].revents.toInt() and (POLLIN or POLLHUP or POLLERR) != 0)) {
+                    val frame = NativeWebSocketFrameCodec.read(downstreamReader::readExactly)
+                    if (frame == null) downstreamOpen = false else {
+                        upstream.write(frame.wireBytes)
+                        frames += frame.evidence("CLIENT_TO_SERVER")
+                    }
+                }
+                if (upstreamOpen && (upstreamReady || pollers[1].revents.toInt() and (POLLIN or POLLHUP or POLLERR) != 0)) {
+                    val frame = NativeWebSocketFrameCodec.read(upstreamReader::readExactly)
+                    if (frame == null) upstreamOpen = false else {
+                        downstream.write(frame.wireBytes)
+                        frames += frame.evidence("SERVER_TO_CLIENT")
+                    }
+                }
+            }
         }
+        store.append(exchange(request, id, response, null, started).copy(protocol = "WebSocket", frames = frames))
     }
-    private fun readFrame(fd: Int): WsFrame? {
-        val header = readExactly(fd, 2) ?: return null
-        val masked = header[1].toInt() and 0x80 != 0; var length = header[1].toInt() and 0x7f
-        val extended = if (length == 126) readExactly(fd, 2) ?: return null else ByteArray(0)
-        if (length == 126) length = (extended[0].toInt() and 0xff) * 256 + (extended[1].toInt() and 0xff)
-        if (length == 127) return null // avoid unbounded native allocations
-        val mask = if (masked) readExactly(fd, 4) ?: return null else ByteArray(0)
-        val payload = readExactly(fd, length) ?: return null
-        if (masked) for (i in payload.indices) payload[i] = (payload[i].toInt() xor mask[i % 4].toInt()).toByte()
-        val frame = header + extended + mask + payload
-        return WsFrame(frame)
-    }
+
+    private fun readFrame(fd: Int): NativeWebSocketFrame? = NativeWebSocketFrameCodec.read { readExactly(fd, it) }
     private fun readExactly(fd: Int, length: Int): ByteArray? { if (length == 0) return ByteArray(0); val out = ByteArray(length); var offset = 0; while (offset < length) { val count = out.usePinned { recv(fd, it.addressOf(offset), (length - offset).toULong(), 0) }; if (count <= 0) return null; offset += count.toInt() }; return out }
-    private fun readTlsHeaders(connection: NativeTlsConnection): String { val bytes = mutableListOf<Byte>(); while (bytes.size < 1024 * 1024) { val chunk = connection.read() ?: break; bytes += chunk.toList(); if (bytes.toByteArray().decodeToString().contains("\r\n\r\n")) break }; return bytes.toByteArray().decodeToString() }
-    private fun readTlsUntilClose(connection: NativeTlsConnection): String { val bytes = mutableListOf<Byte>(); while (true) { val chunk = connection.read() ?: break; bytes += chunk.toList() }; return bytes.toByteArray().decodeToString() }
     private fun sendBytes(fd: Int, bytes: ByteArray) { bytes.usePinned { send(fd, it.addressOf(0), bytes.size.toULong(), 0) } }
     private fun networkShort(port: Int): UShort = (((port ushr 8) and 0xff) or ((port and 0xff) shl 8)).toUShort()
     private fun randomId() = getTimeMillis().toString(36)
     private fun getTimeMillis() = kotlin.time.Clock.System.now().toEpochMilliseconds()
+}
+
+/** Preserves plaintext bytes which a TLS read may return past the HTTP header boundary. */
+internal class NativeTlsBufferedReader(private val connection: NativeTlsConnection) {
+    private var buffered = ByteArray(0)
+
+    fun hasBufferedBytes(): Boolean = buffered.isNotEmpty()
+
+    fun readHeaders(): String {
+        val marker = byteArrayOf('\r'.code.toByte(), '\n'.code.toByte(), '\r'.code.toByte(), '\n'.code.toByte())
+        while (buffered.size < MAX_HEADER_BYTES) {
+            val end = buffered.indexOfSequence(marker)
+            if (end >= 0) {
+                val header = buffered.copyOfRange(0, end + marker.size)
+                buffered = buffered.copyOfRange(end + marker.size, buffered.size)
+                return header.decodeToString()
+            }
+            val next = connection.read() ?: break
+            buffered += next
+        }
+        error(if (buffered.size >= MAX_HEADER_BYTES) "TLS HTTP headers exceed $MAX_HEADER_BYTES bytes" else "TLS peer closed before HTTP headers completed")
+    }
+
+    fun readExactly(length: Int): ByteArray? {
+        require(length >= 0)
+        while (buffered.size < length) {
+            val next = connection.read(length - buffered.size) ?: return null
+            buffered += next
+        }
+        val result = buffered.copyOfRange(0, length)
+        buffered = buffered.copyOfRange(length, buffered.size)
+        return result
+    }
+
+    fun readUntilClose(): String {
+        val bytes = buffered.toMutableList()
+        buffered = ByteArray(0)
+        while (true) {
+            val next = connection.read() ?: break
+            bytes.addAll(next.toList())
+        }
+        return bytes.toByteArray().decodeToString()
+    }
+
+    private fun ByteArray.indexOfSequence(value: ByteArray): Int {
+        if (value.isEmpty() || size < value.size) return -1
+        for (start in 0..(size - value.size)) {
+            if (value.indices.all { this[start + it] == value[it] }) return start
+        }
+        return -1
+    }
+
+    private companion object { const val MAX_HEADER_BYTES = 1024 * 1024 }
+}
+
+internal data class NativeWebSocketFrame(
+    val wireBytes: ByteArray,
+    val opcode: String,
+    val payload: ByteArray,
+) {
+    fun evidence(direction: String): NetworkFrame = NetworkFrame(direction, opcode, when (opcode) {
+        "TEXT", "CONTINUATION" -> payload.takeIf { it.isNotEmpty() }?.decodeToString()
+        else -> payload.takeIf { it.isNotEmpty() }?.let(::encodeBase64)?.let { "base64:$it" }
+    })
+}
+
+/** Reads and inspects RFC 6455 frames without changing the original masked wire representation. */
+internal object NativeWebSocketFrameCodec {
+    fun read(readExactly: (Int) -> ByteArray?): NativeWebSocketFrame? {
+        val header = readExactly(2) ?: return null
+        val first = header[0].toInt() and 0xff
+        val second = header[1].toInt() and 0xff
+        val masked = second and 0x80 != 0
+        val marker = second and 0x7f
+        var length = marker.toLong()
+        val extended = when (marker) {
+            126 -> readExactly(2) ?: return null
+            127 -> readExactly(8) ?: return null
+            else -> ByteArray(0)
+        }
+        if (marker == 126) length = (((extended[0].toInt() and 0xff) shl 8) or (extended[1].toInt() and 0xff)).toLong()
+        if (marker == 127) {
+            require(extended[0].toInt() and 0x80 == 0) { "Malformed WebSocket frame length" }
+            length = extended.fold(0L) { value, byte -> (value shl 8) or (byte.toLong() and 0xff) }
+        }
+        require(length <= Int.MAX_VALUE) { "WebSocket frame payload exceeds native array capacity" }
+        val mask = if (masked) readExactly(4) ?: return null else ByteArray(0)
+        val encodedPayload = readExactly(length.toInt()) ?: return null
+        val decodedPayload = encodedPayload.copyOf()
+        if (masked) for (index in decodedPayload.indices) {
+            decodedPayload[index] = (decodedPayload[index].toInt() xor (mask[index % 4].toInt() and 0xff)).toByte()
+        }
+        val opcode = when (first and 0x0f) {
+            0x0 -> "CONTINUATION"
+            0x1 -> "TEXT"
+            0x2 -> "BINARY"
+            0x8 -> "CLOSE"
+            0x9 -> "PING"
+            0xa -> "PONG"
+            else -> "OPCODE_${first and 0x0f}"
+        }
+        val wire = header + extended + mask + encodedPayload
+        return NativeWebSocketFrame(wire, opcode, decodedPayload)
+    }
+}
+
+private fun encodeBase64(bytes: ByteArray): String {
+    val alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+    return buildString((bytes.size + 2) / 3 * 4) {
+        var index = 0
+        while (index < bytes.size) {
+            val first = bytes[index++].toInt() and 0xff
+            val hasSecond = index < bytes.size
+            val second = if (hasSecond) bytes[index++].toInt() and 0xff else 0
+            val hasThird = index < bytes.size
+            val third = if (hasThird) bytes[index++].toInt() and 0xff else 0
+            append(alphabet[first ushr 2])
+            append(alphabet[((first and 0x03) shl 4) or (second ushr 4)])
+            append(if (hasSecond) alphabet[((second and 0x0f) shl 2) or (third ushr 6)] else '=')
+            append(if (hasThird) alphabet[third and 0x3f] else '=')
+        }
+    }
 }

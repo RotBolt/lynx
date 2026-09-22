@@ -9,7 +9,35 @@ class NativeHttpParserTest {
         val raw = "GET http://example.test/health?full=1 HTTP/1.1\r\nHost: example.test\r\n\r\n"
         val request = NativeHttpParser.parseRequest(raw)
         assertEquals(
-            "GET /health?full=1 HTTP/1.1\r\nHost: example.test\r\n\r\n",
+            "GET /health?full=1 HTTP/1.1\r\nHost: example.test\r\nConnection: close\r\n\r\n",
+            NativeHttpParser.originFormRequest(raw, request),
+        )
+    }
+
+    @Test
+    fun closesOrdinaryUpstreamRequestsButPreservesWebSocketUpgrade() {
+        val keepAlive = "GET http://example.test/health HTTP/1.1\r\n" +
+            "Host: example.test\r\nConnection: Keep-Alive\r\nProxy-Connection: Keep-Alive\r\n\r\n"
+        val websocket = "GET http://example.test/socket HTTP/1.1\r\n" +
+            "Host: example.test\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\r\n"
+
+        assertEquals(
+            "GET /health HTTP/1.1\r\nHost: example.test\r\nConnection: close\r\n\r\n",
+            NativeHttpParser.originFormRequest(keepAlive, NativeHttpParser.parseRequest(keepAlive)),
+        )
+        assertEquals(
+            "GET /socket HTTP/1.1\r\nHost: example.test\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\r\n",
+            NativeHttpParser.originFormRequest(websocket, NativeHttpParser.parseRequest(websocket)),
+        )
+    }
+
+    @Test
+    fun rewritesWebSocketProxyTargetToOriginForm() {
+        val raw = "GET ws://example.test/socket?q=1 HTTP/1.1\r\n" +
+            "Host: example.test\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\r\n"
+        val request = NativeHttpParser.parseRequest(raw)
+        assertEquals(
+            "GET /socket?q=1 HTTP/1.1\r\nHost: example.test\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\r\n",
             NativeHttpParser.originFormRequest(raw, request),
         )
     }
