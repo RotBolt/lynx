@@ -84,6 +84,10 @@ and existing `NativeNetworkEvidenceMetaTest.kt`.
 
 ## M1.1-05 — Transactional lifecycle and recovery
 
+**Prerequisite:** Separate [M1.1-P0](2026-09-22-macos-proxy-recovery.md) must already
+be verified. Reuse its lease, readiness and recovery implementation; extend it
+for capture-session lifecycle rather than introducing a competing mechanism.
+
 **Depends on:** 04. **Consumes:** CaptureRepository. **Produces:** one-active-capture coordinator and recoverable resource leases.
 
 **Files:** New `NativeCaptureCoordinator.kt`, `NativeCaptureLease.kt`,
@@ -158,7 +162,7 @@ Wire platform controller/coordinator and packaging inputs.
 
 ## M1.1-09 — Public session command cutover
 
-**Depends on:** 08. **Consumes:** CaptureRepository and coordinator. **Produces:** lynx.v2 native network commands.
+**Depends on:** 08 and separate [M1.1-WS live recording fix](2026-09-22-live-websocket-capture.md). **Consumes:** CaptureRepository and coordinator. **Produces:** lynx.v2 native network commands.
 
 **Files:** New `apps/cli/src/nativeMain/kotlin/dev/lynx/nativecli/NetworkInspectionCommands.kt`,
 `NativeCommandErrors.kt`; modify native `Main.kt`; new host/network commonMain

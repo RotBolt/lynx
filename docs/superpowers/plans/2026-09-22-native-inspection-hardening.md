@@ -12,6 +12,14 @@
 
 ## Executor handoff (Luna or any other agent)
 
+Start with the [Luna handoff document](2026-09-22-luna-handoff.md), which includes
+M1.1-P0 as a separate fix with its own commit and verification checkpoint.
+
+**Priority safety exception:** Read the [macOS proxy recovery ticket](2026-09-22-macos-proxy-recovery.md)
+first. M1.1-P0 follows read-only baseline inventory and precedes further live proxy
+mutation. Complete the baseline gate after this fix. Ticket 05 extends its lease
+implementation rather than duplicating it.
+
 Read this master, the linked contract, and only the component plan for the next
 incomplete ticket. Start at M1.1-00. Inspect current files before editing; planned
 new filenames are not claims that those APIs already exist. Follow portable
@@ -43,7 +51,8 @@ do not substitute URL filters, app proxy code, root or VPN.
 
 | Gate | Required proof | Blocks |
 |---|---|---|
-| V0 Baseline | Fresh native/JVM checks; unchanged sample apps; actual DB rows; real HTTPS H1, HTTPS H2, and WSS on both targets; prior proxy state recorded. | Any runtime change. |
+| V0 Baseline | Fresh native/JVM checks; unchanged sample apps; actual DB rows; real HTTPS H1, HTTPS H2, and WSS on both targets; prior proxy state recorded. | Runtime changes except P0's documented safety exception; required before P0 completion. |
+| VP0 Proxy recovery | Readiness before activation; durable conditional rollback; crash/startup/detach recovery; user edits preserved; system-proxy-aware connectivity. | P0 working checkpoint and subsequent live proxy changes. |
 | V1 Ownership feasibility | Android real sample sockets through a device-local relay; iOS real process socket matching; positive and unrelated controls to the same destination. | Committing to the production attribution adapters. |
 | V2 Environment | No `adb` on PATH but standard SDK installed; missing tools; partial Xcode; Android/iOS inventory with accurate attachment state; clean JSON. | Discovery checkpoint. |
 | V3 Session/storage | Unique IDs; no cross-session records; immutable per-connection context; large/concurrent writes; legacy preservation; separate shell calls. | Session store checkpoint. |
@@ -65,6 +74,7 @@ describe the JVM backend and must not be treated as proof of native parity.
 
 | Order / ticket | Independently reviewable deliverable | Required gate | Planned commit / local checkpoint tag |
 |---|---|---|---|
+| M1.1-P0 (after 00 read-only inventory) | Separate critical macOS proxy restoration fix; see priority plan. | VP0 + V0 before completion | `fix(network): recover macOS proxy leases` / `checkpoint/m1-1/P0-proxy-recovery` |
 | M1.1-00 | Preserve baseline artifacts, add external verification harness and evidence ledger. | V0 | `test: preserve native inspection baseline` / `checkpoint/m1-1/00-baseline` |
 | M1.1-01 | Bounded attribution proof with real app traffic; document limits and measured lookup timing. | V1 + V0 | `test: prove app socket ownership` / `checkpoint/m1-1/01-ownership-proof` |
 | M1.1-02 | Shared tool resolution and usable-tool diagnostics, including existing DB callers. | V2 resolver cases + V0 | `fix(cli): discover native host tools` / `checkpoint/m1-1/02-tools` |
@@ -74,6 +84,7 @@ describe the JVM backend and must not be treated as proof of native parity.
 | M1.1-06 | Reproduce/fix certificate issuance failures and preserve diagnostic causes. | V5 + V0 | `fix(network): serialize certificate issuance` / `checkpoint/m1-1/06-tls` |
 | M1.1-07 | Shared connection gate plus iOS Simulator ownership adapter and pass-through. | V6 iOS + V0 both | `feat(network): scope simulator capture to app` / `checkpoint/m1-1/07-ios-scope` |
 | M1.1-08 | Production Android relay, host transport, ownership resolver, cleanup and ABI packaging. | V6 Android + V0 both | `feat(network): verify Android socket owners` / `checkpoint/m1-1/08-android-scope` |
+| M1.1-WS | Publish open WebSocket handshake/data/control frames incrementally; no close required. | Live reads before close + V0 + V6 | `fix(network): publish live websocket frames` / `checkpoint/m1-1/WS-live-frames` |
 | M1.1-09 | Native CLI session catalog/snapshot/scoped list/get; update consumers atomically. | V7 + V0 + V6 both | `feat(cli)!: scope network inspection sessions` / `checkpoint/m1-1/09-scoped-cli` |
 | M1.1-10 | Extracted distribution, bundled agent instructions, complete regression report. | V8 | `build: verify scoped native distribution` / `checkpoint/m1-1/10-macos-release-ready` |
 
@@ -83,6 +94,9 @@ introduce a public option that bypasses app-only filtering. A platform capabilit
 is not announced until its own ownership gate passes.
 
 Read these component plans in dependency order:
+
+- Priority exception: [macOS proxy recovery](2026-09-22-macos-proxy-recovery.md), M1.1-P0, after 00 read-only inventory and before completing its live gate.
+- Separate fix: [live WebSocket capture](2026-09-22-live-websocket-capture.md), M1.1-WS, after 08 and before 09.
 
 1. [Baseline, feasibility, checkpoint and release verification](2026-09-22-native-inspection-verification.md): M1.1-00, 01, 10.
 2. [Tool and device discovery](2026-09-22-native-host-discovery.md): M1.1-02, 03.

@@ -133,8 +133,10 @@ failure, protocol, and frame fields, and add capture ID, sequence, and verified
 attribution. Complete bodies remain available; there is no default result/body
 limit. Explicit `--limit` reports returned/matched counts without deleting data.
 In-flight target requests are explicitly counted/described; an open WebSocket
-must not be represented as a completed empty exchange. The existing close-to-
-finalize behavior remains until an independent streaming feature is implemented.
+must not be represented as a completed empty exchange. Publish handshake and
+frames while the connection is open, including ping/pong control frames; closing
+the connection is not a prerequisite for snapshot/list/get visibility. Reads
+remain finite watermark views. M1.1-WS implements this separate live-capture fix.
 
 The changed native network commands use `schema_version: "lynx.v2"` and stable
 types `network_started`, `network_snapshot`, `network_sessions`, `network_list`,

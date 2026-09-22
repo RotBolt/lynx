@@ -10,6 +10,11 @@ reliable proxy/TLS lifecycle. Preserve database and real H1/H2/WSS behavior.
 
 The [implementation plan](../docs/superpowers/plans/2026-09-22-native-inspection-hardening.md)
 defines tickets M1.1-00 through M1.1-10, verification gates and local commit/checkpoints.
+It also includes separate priority fix **M1.1-P0 — macOS proxy restoration**,
+before further live proxy mutation, with its own verification and checkpoint.
+The [Luna handoff](../docs/superpowers/plans/2026-09-22-luna-handoff.md) specifies execution order.
+Separate fix **M1.1-WS** adds WebSocket handshake/data/ping/pong visibility while
+connections remain open, after ticket 08 and before scoped CLI ticket 09.
 The [contract](../docs/superpowers/specs/2026-09-22-app-scoped-native-inspection.md)
 defines ownership and command semantics. Execute sequentially; CI stays deferred.
 Existing M1 completion statements below do not establish native implementation parity.

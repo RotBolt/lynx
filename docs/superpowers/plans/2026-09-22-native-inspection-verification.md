@@ -28,12 +28,19 @@
 | HTTPS HTTP/1.1 | A new app action produces HTTPS, `HTTP/1.1`, status 200 and readable body. | A CONNECT success alone is not a pass. |
 | HTTPS HTTP/2 | A new action negotiates `HTTP/2`; 200 includes readable JSON with `userId`; 304 is reported honestly. | An H1 fallback does not pass H2. Require at least one actual 200/body run at each checkpoint. |
 | WSS | Real app opens, receives `lynx-sample-ping`, and closes; capture contains 101 and matching text/close frames. | CONNECT-only/failed handshake/host-generated echo does not pass. |
+| Live WSS (WS ticket onward) | Before Close, a separate CLI read returns handshake and observed frames; capture observed opcode-9/10 ping/pong too. | Close-only visibility fails. Text named ping is not a protocol ping; absent live control-frame evidence is reported, not invented. |
 | Isolation | The positive flow has OS ownership proof and the right capture/device/application. | Same URL/User-Agent from another process/device, unknown owner and old history are excluded. |
 | TLS pass-through | A foreign HTTPS control sees the origin certificate and succeeds without trusting the Lynx CA. | Non-target connections never call leaf creation or appear in retained target payloads. |
 | Lifecycle | Stop/detach/recovery restore the exact acquired settings and remove owned mappings/helpers. | No lingering worker, stale listener, duplicate worker or accidental removal of another mapping. |
 | Data retention | Large (>64 KiB and multi-MiB) bodies survive concurrent append/read/get. | No timestamp ID collisions, split JSON records, silently skipped corrupt records or default clipping. |
 
 ## M1.1-00 — Baseline and evidence harness
+
+**Safety ordering:** Complete read-only inventory first, then execute separate
+[M1.1-P0 proxy recovery](2026-09-22-macos-proxy-recovery.md) before further live
+proxy mutations. Finish this ticket's live baseline after P0, recording the
+post-fix revision separately from preserved pre-fix artifacts. Do not claim a
+fresh pre-fix live pass when it was unsafe or not run.
 
 **Files:**
 - Create `scripts/verify-native-inspection.sh`: orchestrates checks and evidence, with separate `legacy` and `scoped` command adapters.

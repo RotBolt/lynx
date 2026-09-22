@@ -6,12 +6,20 @@ to one reviewable change and has an explicit verification gate.
 
 ## M1.1 — Native correctness follow-up (all planned)
 
+**Priority M1.1-P0:** [macOS proxy recovery](../docs/superpowers/plans/2026-09-22-macos-proxy-recovery.md).
+Execute after read-only baseline inventory, before further live proxy mutations.
+Requires durable conditional restoration, worker-death recovery and full live
+regression verification. This overrides the linear order below for this safety fix.
+
 Detailed file maps, acceptance tests, dependencies and checkpoint rules are in the
 [master implementation plan](../docs/superpowers/plans/2026-09-22-native-inspection-hardening.md).
-Each ticket depends on the previous row; 00 has no dependency.
+Read [Luna handoff](../docs/superpowers/plans/2026-09-22-luna-handoff.md) for the
+priority order: 00 inventory -> P0 fix/checkpoint -> 00 completion -> 01–08 -> WS -> 09–10.
+Numbered tickets depend on the preceding numbered ticket; 09 also requires WS.
 
 | Ticket | Scope | Acceptance gate |
 |---|---|---|
+| M1.1-P0 | Separate macOS proxy restoration safety fix | VP0 + V0; dedicated commit/checkpoint |
 | M1.1-00 | Baseline and external evidence harness | V0: both apps, DB and real H1/H2/WSS |
 | M1.1-01 | Real socket ownership feasibility | V1: target and same-destination non-target |
 | M1.1-02 | Native tool resolution | V2 resolver cases + V0 |
@@ -21,7 +29,8 @@ Each ticket depends on the previous row; 00 has no dependency.
 | M1.1-06 | Certificate issuance diagnostics/fix | V5 + V0 |
 | M1.1-07 | iOS Simulator admission/ownership | V6 iOS + V0 both |
 | M1.1-08 | Android relay/ownership | V6 Android + V0 both |
-| M1.1-09 | Session catalog, snapshot, scoped list/get | V7 + V6 both + V0 |
+| M1.1-WS | [Live WebSocket frames, including ping/pong](../docs/superpowers/plans/2026-09-22-live-websocket-capture.md); after 08, before 09 | Before-close reads + V0 + V6; separate checkpoint |
+| M1.1-09 | Session catalog, snapshot, scoped list/get; depends on WS | V7 + V6 both + V0 |
 | M1.1-10 | Extracted distribution and agent docs | V8 |
 
 No ticket may be marked complete from unit tests alone; follow the master plan's
