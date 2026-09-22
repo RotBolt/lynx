@@ -3,6 +3,7 @@ package dev.lynx.nativehost
 import dev.lynx.model.NetworkCapabilities
 import dev.lynx.model.NetworkCaptureSettings
 import dev.lynx.model.NetworkCommand
+import dev.lynx.model.CaptureState
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -11,6 +12,22 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class NativeMacProxyLifecycleTest {
+    @Test
+    fun failedStartInterruptsItsCaptureLease() {
+        val root = "/tmp/lynx-network-failed-capture-${kotlin.time.Clock.System.now().toEpochMilliseconds()}"
+        val repository = PosixCaptureRepository("$root/captures")
+        val sessions = InMemoryNativeSessionStore().also {
+            it.save(NativeSession("session-1", "ios-simulator:SIM-1", "dev.lynx.app", 1234))
+        }
+
+        assertFailsWith<IllegalStateException> {
+            inspector(PosixNativeNetworkStateStore(root), sessions, StatefulNetworksetupRunner(), root, repository)
+                .execute(NetworkCommand.Start(NetworkCaptureSettings(listenHost = "127.0.0.1", listenPort = 62006)))
+        }
+
+        assertEquals(CaptureState.INTERRUPTED, repository.sessions().single().state)
+    }
+
     @Test
     fun startDoesNotMutateMacProxyUntilWorkerReadinessMatchesEndpoint() {
         val root = "/tmp/lynx-network-lifecycle-${kotlin.time.Clock.System.now().toEpochMilliseconds()}"
@@ -116,6 +133,7 @@ class NativeMacProxyLifecycleTest {
         sessions: NativeSessionStore,
         runner: StatefulNetworksetupRunner,
         root: String,
+        captureRepository: CaptureRepository = PosixCaptureRepository("$root/captures"),
     ) = PosixNativeNetworkInspector(
         store = store,
         sessions = sessions,
@@ -126,6 +144,7 @@ class NativeMacProxyLifecycleTest {
             },
             root = "$root/certs",
         ),
+        captureRepository = captureRepository,
     )
 
     private fun activeLease() = NativeMacProxyLease(

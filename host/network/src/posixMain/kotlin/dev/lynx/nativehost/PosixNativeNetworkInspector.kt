@@ -12,15 +12,17 @@ class PosixNativeNetworkInspector(
     private val sessions: NativeSessionStore = PosixNativeSessionStore(),
     private val processes: NativeProcessRunner = PosixProcessRunner(),
     private val certificates: PosixNativeCertificateAuthority = PosixNativeCertificateAuthority(processes),
+    private val captureRepository: CaptureRepository = PosixCaptureRepository(),
 ) : NativeNetworkInspector {
     private val androidProxy = NativeAndroidProxyController(processes)
     private val macProxy = NativeMacSystemProxyController(processes, service = null)
     private val macRecovery = NativeMacProxyRecovery(macProxy, store)
     private val clientDispatcher = PosixNativeConnectionDispatcher()
+    private val captures = NativeCaptureCoordinator(captureRepository, idProvider = { "capture_${randomId()}" })
 
     override fun execute(command: NetworkCommand): NetworkCommandResult = when (command) {
         is NetworkCommand.Start -> start(command.settings)
-        NetworkCommand.Stop -> { restoreDeviceProxy(); store.clearRunning(); store.clearWorkerReady(); NetworkCommandResult.Stopped }
+        NetworkCommand.Stop -> { store.captureId()?.let(captures::stop); restoreDeviceProxy(); store.clearRunning(); store.clearWorkerReady(); NetworkCommandResult.Stopped }
         is NetworkCommand.List -> NetworkCommandResult.Exchanges(store.list(command.filter))
         is NetworkCommand.Get -> store.get(command.requestId)?.let(NetworkCommandResult::Exchange)
             ?: error("network exchange not found: ${command.requestId.value}")
@@ -51,9 +53,24 @@ class PosixNativeNetworkInspector(
             }
             reconcileRunningState()
         }
-        if (!store.isRunning()) macRecovery.restoreOwnedLease()
+        if (!store.isRunning()) {
+            captureRepository.sessions()
+                .filter { it.state in setOf(CaptureState.STARTING, CaptureState.RUNNING, CaptureState.STOPPING) }
+                .forEach { captures.interrupt(it.id) }
+            macRecovery.restoreOwnedLease()
+        }
         val caps = capabilities().copy(proxyEndpoint = endpoint, proxyStatus = "starting")
         val session = sessions.load()
+        val captureId = session?.let { attached ->
+            captures.start(
+                attached.id,
+                CaptureTarget(
+                    platform = if (attached.deviceSerial.startsWith("ios-simulator:")) "ios" else "android",
+                    deviceId = attached.deviceSerial.removePrefix("ios-simulator:"),
+                    applicationId = attached.packageName,
+                ),
+            ).id
+        }
         val captureToken = "capture_${randomId()}"
         val macLease = if (session?.deviceSerial?.startsWith("ios-simulator:") == true) {
             require(settings.listenHost == "0.0.0.0" || settings.listenHost == "127.0.0.1") {
@@ -64,23 +81,24 @@ class PosixNativeNetworkInspector(
         val previousProxy = macLease?.previousProxyMap()
         store.clearWorkerReady()
         store.clearSupervisorReady()
-        store.setRunning(endpoint, caps, previousProxy, workerPid = null, workerStartIdentity = null, supervisorPid = null, captureToken = captureToken)
-        // Launch the same native executable as a detached worker. Installers put `lynx` on PATH;
-        // tests and embedders can provide LYNX_EXECUTABLE explicitly.
-        val executable = getenv("LYNX_EXECUTABLE")?.toKString()?.takeIf(String::isNotBlank)
+        store.setRunning(endpoint, caps, previousProxy, workerPid = null, workerStartIdentity = null, supervisorPid = null, captureToken = captureToken, captureId = captureId)
+        try {
+            // Launch the same native executable as a detached worker. Installers put `lynx` on PATH;
+            // tests and embedders can provide LYNX_EXECUTABLE explicitly.
+            val executable = getenv("LYNX_EXECUTABLE")?.toKString()?.takeIf(String::isNotBlank)
             ?: nativeExecutablePath()
             ?: "lynx"
-        val launch = processes.run(listOf("sh", "-c", "LYNX_CAPTURE_TOKEN='$captureToken' nohup '$executable' network worker $port >/dev/null 2>&1 </dev/null & echo \$!"))
-        val workerPid = launch.stdout.trim().toIntOrNull()
+            val launch = processes.run(listOf("sh", "-c", "LYNX_CAPTURE_TOKEN='$captureToken' LYNX_CAPTURE_ID='${captureId.orEmpty()}' LYNX_CAPTURE_ENDPOINT='$endpoint' nohup '$executable' network worker $port >/dev/null 2>&1 </dev/null & echo \$!"))
+            val workerPid = launch.stdout.trim().toIntOrNull()
             ?: error("native network worker did not report a process ID")
-        val workerStartIdentity = processStartIdentity(workerPid)
+            val workerStartIdentity = processStartIdentity(workerPid)
             ?: error("native network worker identity could not be verified")
-        store.setRunning(endpoint, caps, previousProxy, workerPid, workerStartIdentity, supervisorPid = null, captureToken = captureToken)
-        val preparedMacLease = macLease?.copy(workerPid = workerPid, workerStartIdentity = workerStartIdentity)
-        if (preparedMacLease != null) store.save(preparedMacLease)
-        try {
+            val captureLease = captureId?.let { NativeCaptureLease(it, captureToken, endpoint, NativeWorkerIdentity(workerPid, workerStartIdentity)) }
+            store.setRunning(endpoint, caps, previousProxy, workerPid, workerStartIdentity, supervisorPid = null, captureToken = captureToken, captureId = captureId)
+            val preparedMacLease = macLease?.copy(workerPid = workerPid, workerStartIdentity = workerStartIdentity)
+            if (preparedMacLease != null) store.save(preparedMacLease)
             repeat(40) {
-                if (store.workerReady(port, captureToken, workerPid) && workerIdentityIsCurrent() && probeListener(port)) {
+                if ((captureLease?.let(store::workerReady) ?: store.workerReady(port)) && workerIdentityIsCurrent() && probeListener(port)) {
                     val supervisorPid = if (preparedMacLease != null) launchSupervisor(port, captureToken) else null
                     if (supervisorPid != null && !waitForSupervisor(captureToken, supervisorPid)) {
                         error("native proxy supervisor did not become ready")
@@ -89,13 +107,14 @@ class PosixNativeNetworkInspector(
                         macRecovery.activatePreparedLease(it.copy(supervisorPid = supervisorPid)).previousProxyMap()
                     } ?: applyDeviceProxy(port, settings.listenHost)
                     val running = caps.copy(proxyStatus = "running")
-                    store.setRunning(endpoint, running, activePreviousProxy, workerPid, workerStartIdentity, supervisorPid, captureToken)
+                    store.setRunning(endpoint, running, activePreviousProxy, workerPid, workerStartIdentity, supervisorPid, captureToken, captureId)
                     return NetworkCommandResult.Started(endpoint, running)
                 }
                 usleep(50_000u)
             }
             throw IllegalStateException("native network worker did not become ready; install lynx on PATH or set LYNX_EXECUTABLE")
         } catch (error: Throwable) {
+            captureId?.let(captures::interrupt)
             runCatching { restoreDeviceProxy() }
             store.clearRunning()
             store.clearWorkerReady()
@@ -146,6 +165,7 @@ class PosixNativeNetworkInspector(
     private fun reconcileRunningState() {
         if (!store.isRunning()) return
         if (currentCaptureHealthy()) return
+        store.captureId()?.let(captures::interrupt)
         restoreDeviceProxy()
         store.clearRunning()
         store.clearWorkerReady()
@@ -241,7 +261,12 @@ class PosixNativeNetworkInspector(
             fcntl(server, F_SETFL, fcntl(server, F_GETFL) or O_NONBLOCK)
         }
         val captureToken = getenv("LYNX_CAPTURE_TOKEN")?.toKString()?.takeIf(String::isNotBlank)
-        if (captureToken != null) store.markWorkerReady(port, captureToken, getpid()) else store.markWorkerReady(port)
+        val captureId = getenv("LYNX_CAPTURE_ID")?.toKString()?.takeIf(String::isNotBlank)
+        val endpoint = getenv("LYNX_CAPTURE_ENDPOINT")?.toKString()?.takeIf(String::isNotBlank)
+        val workerStartIdentity = processStartIdentity(getpid())
+        if (captureToken != null && captureId != null && endpoint != null && workerStartIdentity != null) {
+            store.markWorkerReady(NativeCaptureLease(captureId, captureToken, endpoint, NativeWorkerIdentity(getpid(), workerStartIdentity)))
+        } else store.markWorkerReady(port)
         try {
             while (store.isRunning()) {
                 val client = accept(server, null, null)
@@ -257,7 +282,9 @@ class PosixNativeNetworkInspector(
     fun supervisor(port: Int) {
         val token = getenv("LYNX_CAPTURE_TOKEN")?.toKString()?.takeIf(String::isNotBlank) ?: return
         val worker = store.workerIdentity() ?: return
-        if (!store.workerReady(port, token, worker.pid)) return
+        val captureId = store.captureId() ?: return
+        val endpoint = store.endpoint() ?: return
+        if (!store.workerReady(NativeCaptureLease(captureId, token, endpoint, worker))) return
         val monitor = NativeMacProxyWorkerSupervisor(
             worker = worker,
             identityForPid = ::processStartIdentity,

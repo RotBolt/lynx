@@ -5,10 +5,20 @@ import kotlin.concurrent.atomics.AtomicInt
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import platform.posix.usleep
 
 @OptIn(ExperimentalAtomicApi::class)
 class PosixNativeNetworkStateStoreTest {
+    @Test
+    fun legacyReadinessAckWithoutCaptureIdentityIsRejected() {
+        val store = PosixNativeNetworkStateStore("/tmp/lynx-network-state-legacy-ready-${kotlin.time.Clock.System.now().toEpochMilliseconds()}")
+
+        store.markWorkerReady(62006, "capture-token", 4812)
+
+        assertFalse(store.workerReady(62006, "capture-token", 4812))
+    }
+
     @Test
     fun runningStateReadersNeverObserveAnInProgressRewriteAsStopped() {
         val root = "/tmp/lynx-network-state-test-${kotlin.time.Clock.System.now().toEpochMilliseconds()}"

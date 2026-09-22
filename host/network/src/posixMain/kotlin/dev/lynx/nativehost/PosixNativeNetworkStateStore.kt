@@ -29,6 +29,16 @@ private data class RuntimeState(
     val workerStartIdentity: String? = null,
     val supervisorPid: Int? = null,
     val captureToken: String? = null,
+    val captureId: String? = null,
+)
+
+@Serializable
+private data class WorkerReadiness(
+    val captureId: String,
+    val captureToken: String,
+    val endpoint: String,
+    val workerPid: Int,
+    val workerStartIdentity: String,
 )
 
 /** JSONL evidence store. Files are intentionally plain and portable across native processes. */
@@ -52,6 +62,7 @@ class PosixNativeNetworkStateStore(
     }
     fun supervisorPid(): Int? = readState()?.supervisorPid
     fun captureToken(): String? = readState()?.captureToken
+    fun captureId(): String? = readState()?.captureId
 
     override fun setRunning(endpoint: String, capabilities: NetworkCapabilities, previousProxy: Map<String, String?>?) {
         setRunning(endpoint, capabilities, previousProxy, workerPid = null, workerStartIdentity = null, supervisorPid = null, captureToken = null)
@@ -65,13 +76,14 @@ class PosixNativeNetworkStateStore(
         workerStartIdentity: String?,
         supervisorPid: Int?,
         captureToken: String?,
+        captureId: String? = null,
     ) {
         ensureRoot()
         writeText(
             statePath,
             json.encodeToString(
                 RuntimeState.serializer(),
-                RuntimeState(endpoint, capabilities, previousProxy, workerPid, workerStartIdentity, supervisorPid, captureToken),
+                RuntimeState(endpoint, capabilities, previousProxy, workerPid, workerStartIdentity, supervisorPid, captureToken, captureId),
             ),
         )
     }
@@ -90,15 +102,25 @@ class PosixNativeNetworkStateStore(
         writeText(readyPath, "$port $captureToken $workerPid\n")
     }
 
+    fun markWorkerReady(lease: NativeCaptureLease) {
+        ensureRoot()
+        writeText(readyPath, json.encodeToString(WorkerReadiness.serializer(), WorkerReadiness(
+            lease.captureId, lease.captureToken, lease.endpoint, lease.worker.pid, lease.worker.startIdentity,
+        )))
+    }
+
     fun workerReady(): Boolean = readText(readyPath)?.trim()?.isNotEmpty() == true
     fun workerReady(port: Int): Boolean = readText(readyPath)?.trim() == port.toString()
-    fun workerReady(port: Int, captureToken: String, workerPid: Int?): Boolean {
-        val parts = readText(readyPath)?.trim()?.split(Regex("\\s+")) ?: return false
-        if (parts.size != 3) return false
-        if (parts[0].toIntOrNull() != port || parts[1] != captureToken) return false
-        val readyPid = parts[2].toIntOrNull() ?: return false
-        return workerPid == null || readyPid == workerPid
-    }
+    /** Legacy token/PID acknowledgements cannot prove ownership of a capture. */
+    fun workerReady(port: Int, captureToken: String, workerPid: Int?): Boolean = false
+
+    fun workerReady(lease: NativeCaptureLease): Boolean = readText(readyPath)?.trim()?.takeIf(String::isNotEmpty)?.let { raw ->
+        runCatching { json.decodeFromString(WorkerReadiness.serializer(), raw) }.getOrNull()
+    }?.let { ready ->
+        ready.captureId == lease.captureId && ready.captureToken == lease.captureToken &&
+            ready.endpoint == lease.endpoint && ready.workerPid == lease.worker.pid &&
+            ready.workerStartIdentity == lease.worker.startIdentity
+    } == true
 
     fun clearWorkerReady() { remove(readyPath) }
 
