@@ -10,6 +10,7 @@ certificates and traffic remain under ignored `build/verification/` directories.
 | M1.1-01 | pending | pass: API 17 emulator, shell relay and `run-as` FD/inode proof | pass: booted iOS 26.4 Simulator, libproc tuple/process proof | pass | pass | pass | pass | Android proxy/reverse/helper and macOS proxy restored | pass for recorded emulator/simulator scope; API 26, physical Android, PID-race and IPv6 device rows pending |
 | M1.1-02 | pending | pass: API 17 emulator database snapshot | pass: booted iOS 26.4 Simulator database snapshot | source/snapshot rows matched on both platforms | pass | pass | pass | Android proxy `:0`, no reverse mappings, macOS web and secure-web proxies restored | pass; tool resolution and subprocess diagnostics covered by native tests |
 | M1.1-03 | pending | pass: API 17 emulator listed as attachable | pass: booted iOS 26.4 Simulator listed as attachable; shutdown simulators retained but not attachable | source/snapshot rows matched on both platforms | pass | pass | pass | Android proxy `:0`, no reverse mappings, macOS web and secure-web proxies restored | pass for macOS discovery; Linux iOS is explicitly not applicable |
+| M1.1-04 | pending | pass: legacy DB/protocol regression | pass: legacy DB/protocol regression | source/snapshot rows matched on both platforms | pass | pass | pass | Android proxy `:0`, no reverse mappings, macOS web and secure-web proxies restored | pass; versioned verified-capture repository internal until lifecycle/cutover |
 
 Use `pass`, `fail`, `blocked`, or `not_run`; never replace a missing live row
 with an old result or a local fixture.
@@ -58,3 +59,13 @@ with an old result or a local fixture.
 - Full V0 again matched Android/iOS source and snapshot query rows, completed
   both WebSocket smokes, restored macOS web/secure-web proxies, left Android at
   proxy `:0`, and left no ADB reverse mappings.
+
+## M1.1-04 pre-commit evidence
+
+- Repository tests cover A/B isolation, immutable origin/target validation,
+  monotonic per-session watermarks, a post-snapshot completion, a 2 MiB body,
+  explicit complete-record corruption, and serialized append sequencing.
+- Full V0 evidence is in `build/verification/m1-1/04/20260922-230857`.
+  Android/iOS source and snapshot query rows matched; both WebSocket smokes
+  passed. Android finished at proxy `:0` with no reverse mappings; macOS web
+  and secure-web proxy snapshots matched before/after.
