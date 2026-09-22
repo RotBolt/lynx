@@ -52,10 +52,13 @@ lynx network start --json
 lynx network list --json
 lynx network get req_42 --json
 
-lynx db list --json
-lynx db snapshot databases/app.db --json
+lynx db list --platform android --device emulator-5554 --package com.example.app --json
+lynx db snapshot databases/app.db --platform android --device emulator-5554 --package com.example.app --json
 lynx db query --snapshot snap_10 "SELECT * FROM pending_actions" --json
 ```
+
+For an iOS Simulator, keep `db list` and `db snapshot` and select the target
+with `--platform ios --device <simulator-udid> --package <bundle-id>`.
 
 The agent should be able to reason:
 

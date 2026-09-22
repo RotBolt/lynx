@@ -104,8 +104,10 @@ iOS Simulator uses `simctl`; physical iOS receives a generated
 ## Database inspection ✅
 
 ```bash
-$LYNX db list --json
-$LYNX db snapshot databases/conversation.db --json
+$LYNX db list --platform android --device emulator-5554 \
+  --package dev.lynx.dummyapp --json
+$LYNX db snapshot databases/conversation.db --platform android \
+  --device emulator-5554 --package dev.lynx.dummyapp --json
 $LYNX db tables --snapshot <snapshot_id> --json
 $LYNX db schema --snapshot <snapshot_id> --json
 $LYNX db query --snapshot <snapshot_id> \
@@ -116,11 +118,14 @@ Use the full app-relative `database_id` returned by `db list`. Snapshot IDs are
 valid while the owning session remains attached. Queries are read-only and
 return all selected columns/rows; BLOBs use explicit base64 JSON values.
 
-For the iOS fixture, the app-relative database ID is `Documents/dummyapp.db`:
+For iOS Simulator, use exactly the same commands and flags. The app-relative
+database ID is `Documents/dummyapp.db`:
 
 ```bash
-$LYNX db list --json
-$LYNX db snapshot Documents/dummyapp.db --json
+$LYNX db list --platform ios --device <simulator-udid> \
+  --package dev.lynx.dummyapp --json
+$LYNX db snapshot Documents/dummyapp.db --platform ios \
+  --device <simulator-udid> --package dev.lynx.dummyapp --json
 $LYNX db tables --snapshot <snapshot_id> --json
 $LYNX db query --snapshot <snapshot_id> \
   'SELECT transport, status, response_body, error FROM network_events' --json

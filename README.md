@@ -64,9 +64,20 @@ Attach to a debuggable app and inspect its database:
 lynx devices
 lynx attach emulator-5554 dev.lynx.dummyapp
 lynx status
-lynx db list --device emulator-5554 --package dev.lynx.dummyapp
+lynx db list --platform android --device emulator-5554 \
+  --package dev.lynx.dummyapp
 lynx db snapshot databases/dummyapp.db \
-  --device emulator-5554 --package dev.lynx.dummyapp
+  --platform android --device emulator-5554 --package dev.lynx.dummyapp
+```
+
+The same `db list` and `db snapshot` commands work with an iOS Simulator by
+changing `--platform` to `ios` and passing its UDID to `--device`:
+
+```bash
+lynx db list --platform ios --device <simulator-udid> \
+  --package dev.lynx.dummyapp
+lynx db snapshot Documents/dummyapp.db --platform ios \
+  --device <simulator-udid> --package dev.lynx.dummyapp
 ```
 
 The native executable supports persistent HTTP/1.1 and HTTPS MITM capture across
@@ -158,8 +169,10 @@ in [native distribution](docs/distribution/native.md).
 ## Database workflow 🗄️
 
 ```bash
-$LYNX db list --json
-$LYNX db snapshot databases/conversation.db --json
+$LYNX db list --platform android --device emulator-5554 \
+  --package ai.sarvam.prep.app --json
+$LYNX db snapshot databases/conversation.db --platform android \
+  --device emulator-5554 --package ai.sarvam.prep.app --json
 
 # Use the snapshot_id returned above.
 $LYNX db tables --snapshot <snapshot_id> --json

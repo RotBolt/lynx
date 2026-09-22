@@ -70,15 +70,22 @@ transports.
 
 ### Discovery
 ```bash
-lynx db list --json
+lynx db list --platform android --device emulator-5554 --package com.example.app --json
+lynx db list --platform ios --device <simulator-udid> --package <bundle-id> --json
 ```
 
 Discover SQLite DBs via ADB + `run-as`.
 
 ### Snapshot
 ```bash
-lynx db snapshot app.db
+lynx db snapshot databases/app.db --platform android --device emulator-5554 --package com.example.app
+lynx db snapshot Documents/app.db --platform ios --device <simulator-udid> --package <bundle-id>
 ```
+
+Platform selection is an option on the same command; do not create platform-
+specific command names such as `ios-list` or `ios-snapshot`. Android `--device`
+is an ADB serial (for example, an emulator serial); iOS `--device` is a
+Simulator UDID. `--package` is the Android package name or iOS bundle ID.
 
 Must account for WAL and declare:
 - snapshot ID;

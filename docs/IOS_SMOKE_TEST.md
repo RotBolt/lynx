@@ -1,8 +1,7 @@
-# iOS Simulator smoke test (JVM compatibility backend) 🧪
+# iOS Simulator smoke test (native `lynx`) 🧪
 
-> This document exercises the legacy daemon protocol. The supported developer
-> distribution is the native KMP executable; use `docs/distribution/native.md`
-> for its installation and native command surface.
+This verifies the native macOS executable against the real iOS Simulator
+fixture, including explicit HTTP/1.1, HTTP/2, and WebSocket button actions.
 
 This is the reproducible macOS smoke test for the currently supported iOS
 target. It verifies that Lynx can attach to the fixture, capture HTTP/1.1,
@@ -11,22 +10,21 @@ HTTP/2, and WebSocket traffic, and inspect the fixture's SQLite database.
 ## Prerequisites
 
 - macOS with Xcode command-line tools and a booted iOS Simulator.
-- JDK 21 and the JVM compatibility distribution built with `installJvmDist`.
-- A running Lynx daemon in a separate terminal.
+- The native KMP executable built or downloaded and available as `lynx`.
+- A booted iOS Simulator.
 
-Build Lynx and start the daemon:
+Build Lynx and select the executable:
 
 ```bash
-./gradlew test :apps:cli:installJvmDist --no-daemon
-./apps/cli/build/install/cli-jvm/bin/cli daemon
+./gradlew :apps:cli:linkReleaseExecutableMacosArm64 --no-daemon
+LYNX=./apps/cli/build/bin/macosArm64/releaseExecutable/lynx.kexe
 ```
 
 Select a booted Simulator UDID:
 
 ```bash
-xcrun simctl list devices | grep Booted
+xcrun simctl list devices booted
 UDID=<booted-simulator-udid>
-LYNX=./apps/cli/build/install/cli-jvm/bin/cli
 ```
 
 ## Build, install, and attach
@@ -36,13 +34,12 @@ dummyapp/iosApp/build-simulator.sh
 xcrun simctl install "$UDID" \
   dummyapp/iosApp/build/Debug-iphonesimulator/LynxDummyApp.app
 
-$LYNX attach --device ios-simulator:"$UDID" \
-  --package dev.lynx.dummyapp --json
+$LYNX attach ios-simulator:"$UDID" dev.lynx.dummyapp
 ```
 
-The attach response must report `type: "attached"`,
-`device: "ios-simulator:<UDID>"`, package `dev.lynx.dummyapp`, and a host PID.
-Lynx launches the fixture as part of iOS Simulator target resolution.
+Native attachment launches/resolves the selected Simulator app and records its
+host PID. The database commands use the same command names on both platforms:
+`db list` and `db snapshot`, with platform and target selected by flags.
 
 ## Trust and network capture
 
@@ -56,7 +53,9 @@ $LYNX network start --json
 
 xcrun simctl terminate "$UDID" dev.lynx.dummyapp || true
 xcrun simctl launch "$UDID" dev.lynx.dummyapp
-sleep 10
+
+# Tap HTTP/1.1 Call, HTTP/2 Call, WebSocket Start, then WebSocket Close in the
+# Simulator UI. The app makes no requests on launch.
 
 $LYNX network doctor --json
 $LYNX network list --json
@@ -65,9 +64,9 @@ $LYNX network list --json
 The verified run produced these exchange classes:
 
 ```text
-GET https://ws.postman-echo.com/raw             101  WebSocket
 GET http://httpbin.org/get                     200  HTTP/1.1
-GET https://jsonplaceholder.typicode.com/...   304  HTTP/2
+GET https://jsonplaceholder.typicode.com/...   200  HTTP/2
+GET https://ws.postman-echo.com/raw             101  WebSocket
 ```
 
 The exact HTTP status can vary with the public endpoints; the protocol and
@@ -77,8 +76,10 @@ to retrieve one complete exchange.
 ## Database inspection
 
 ```bash
-$LYNX db list --json
-$LYNX db snapshot Documents/dummyapp.db --json
+$LYNX db list --platform ios --device "$UDID" \
+  --package dev.lynx.dummyapp --json
+$LYNX db snapshot Documents/dummyapp.db --platform ios --device "$UDID" \
+  --package dev.lynx.dummyapp --json
 
 # Copy the snapshot_id from the snapshot response.
 $LYNX db tables --snapshot <snapshot_id> --json

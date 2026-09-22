@@ -37,9 +37,20 @@ Discover database IDs before taking a snapshot. Use the exact app-relative ID
 returned by the command; do not shorten `databases/foo.db` to `foo.db`.
 
 ```bash
-lynx db list --device emulator-5554 --package dev.lynx.dummyapp --json
+lynx db list --platform android --device emulator-5554 \
+  --package dev.lynx.dummyapp --json
 lynx db snapshot databases/dummyapp.db \
-  --device emulator-5554 --package dev.lynx.dummyapp --json
+  --platform android --device emulator-5554 \
+  --package dev.lynx.dummyapp --json
+```
+
+For iOS Simulator, keep the same command names and use the simulator UDID:
+
+```bash
+lynx db list --platform ios --device <simulator-udid> \
+  --package dev.lynx.dummyapp --json
+lynx db snapshot Documents/dummyapp.db --platform ios \
+  --device <simulator-udid> --package dev.lynx.dummyapp --json
 ```
 
 Read `snapshot_id` from the response, then inspect schema and data:

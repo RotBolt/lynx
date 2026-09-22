@@ -70,9 +70,10 @@ under construction 🚧.
 ## Android database smoke path
 
 ```bash
-lynx db list --device emulator-5554 --package dev.lynx.dummyapp
+lynx db list --platform android --device emulator-5554 \
+  --package dev.lynx.dummyapp
 lynx db snapshot databases/dummyapp.db \
-  --device emulator-5554 --package dev.lynx.dummyapp
+  --platform android --device emulator-5554 --package dev.lynx.dummyapp
 lynx db tables /tmp/lynx-native-databases_dummyapp.db.db \
   --package dev.lynx.dummyapp
 lynx db query /tmp/lynx-native-databases_dummyapp.db.db \
@@ -85,17 +86,20 @@ The macOS native binary can resolve the simulator app container through
 `simctl` and inspect the copied SQLite file:
 
 ```bash
-lynx db ios-list --udid booted --package dev.lynx.dummyapp
-lynx db ios-snapshot Documents/dummyapp.db \
-  --udid booted --package dev.lynx.dummyapp
-lynx db tables /tmp/lynx-native-ios-Documents_dummyapp.db.db \
+lynx db list --platform ios --device <simulator-udid> \
   --package dev.lynx.dummyapp
-lynx db query /tmp/lynx-native-ios-Documents_dummyapp.db.db \
+lynx db snapshot Documents/dummyapp.db --platform ios \
+  --device <simulator-udid> --package dev.lynx.dummyapp
+lynx db tables /tmp/lynx-native-Documents_dummyapp.db.db \
+  --package dev.lynx.dummyapp
+lynx db query /tmp/lynx-native-Documents_dummyapp.db.db \
   'select count(*) as count from network_events;' --package dev.lynx.dummyapp
 ```
 
-Snapshots are copied through `adb shell run-as`; SQLite inspection is performed
-by the host `sqlite3` command in read-only mode. Native `network start`, `stop`,
+Snapshots are copied through `adb shell run-as` on Android or `simctl` on iOS;
+SQLite inspection is performed by the host `sqlite3` command in read-only mode.
+Both platforms use the same `db list` / `db snapshot` syntax; select the target
+with `--platform`, `--device`, and `--package`. Native `network start`, `stop`,
 `list`, `get`, and `doctor` share a JSONL evidence store across independent
 invocations. The native proxy forwards and records cleartext HTTP/1.1, HTTPS
 CONNECT, and HTTP/2 traffic using the host OpenSSL and nghttp2 runtimes. The
