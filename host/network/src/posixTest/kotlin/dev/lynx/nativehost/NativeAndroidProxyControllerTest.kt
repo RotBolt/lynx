@@ -26,7 +26,12 @@ class NativeAndroidProxyControllerTest {
             runner.commands.drop(4).take(4).map { it.last() },
         )
         assertEquals(
-            keys.map { listOf("adb", "-s", "emulator-5554", "shell", "settings", "delete", "global", it) },
+            listOf(
+                listOf("adb", "-s", "emulator-5554", "shell", "settings", "put", "global", "http_proxy", ":0"),
+                listOf("adb", "-s", "emulator-5554", "shell", "settings", "delete", "global", "https_proxy"),
+                listOf("adb", "-s", "emulator-5554", "shell", "settings", "delete", "global", "global_http_proxy_host"),
+                listOf("adb", "-s", "emulator-5554", "shell", "settings", "delete", "global", "global_http_proxy_port"),
+            ),
             runner.commands.drop(8),
         )
     }

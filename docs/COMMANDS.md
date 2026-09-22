@@ -47,13 +47,13 @@ For an iOS Simulator, use the explicit target prefix:
 $LYNX attach --device ios-simulator:<simulator-udid> --package dev.lynx.dummyapp --json
 ```
 
-The current iOS target is the booted Simulator. Build/install the fixture
+The current iOS target is the booted Simulator. Build/install the sample app
 before attaching:
 
 ```bash
 dummyapp/iosApp/build-simulator.sh
 xcrun simctl install <simulator-udid> \
-  dummyapp/iosApp/build/Debug-iphonesimulator/LynxDummyApp.app
+  dummyapp/iosApp/build/Debug-iphonesimulator/LynxSampleApp.app
 ```
 
 `--device` is optional when exactly one online device is available. Lynx resolves
@@ -82,9 +82,14 @@ Supported protocol evidence:
 
 On iOS Simulator, `network start` applies the Lynx proxy to the macOS Wi-Fi
 service. Stop capture when finished so the host proxy is restored. The iOS
-fixture uses public endpoints (`httpbin.org`, `jsonplaceholder.typicode.com`,
+sample app uses public endpoints (`httpbin.org`, `jsonplaceholder.typicode.com`,
 and `ws.postman-echo.com`) because private-address and localhost bypass cases
 are not yet supported by the simulator adapter.
+
+On Android, after `network start` applies the device-wide proxy, force-stop and
+relaunch an app that was already running before capture began, then trigger its
+requests. The app should use its normal HTTP client and debug trust
+configuration; it must not contain Lynx-specific proxy settings or code.
 
 ## CA onboarding ✅
 

@@ -38,7 +38,15 @@ class NativeAndroidProxyController(private val processes: NativeProcessRunner) {
         val prefix = listOf("adb", "-s", deviceSerial, "shell", "settings")
         keys.forEach { key ->
             val value = previous[key]
-            val operation = if (value.isNullOrBlank()) listOf("delete", "global", key) else listOf("put", "global", key, value)
+            // ConnectivityService observes the deprecated combined setting, but
+            // ignores an empty/deleted value. Deleting it can leave its cached
+            // ProxyInfo active until reboot. Android's explicit direct-proxy
+            // sentinel causes the observer to clear that cached proxy.
+            val operation = when {
+                key == "http_proxy" && value.isNullOrBlank() -> listOf("put", "global", key, ":0")
+                value.isNullOrBlank() -> listOf("delete", "global", key)
+                else -> listOf("put", "global", key, value)
+            }
             val result = processes.run(prefix + operation)
             require(result.exitCode == 0) { result.stderr.ifBlank { "unable to restore Android proxy setting $key" } }
         }

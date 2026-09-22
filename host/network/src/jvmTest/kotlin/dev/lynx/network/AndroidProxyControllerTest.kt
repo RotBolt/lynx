@@ -73,7 +73,10 @@ class AndroidProxyControllerTest {
         controller.restore(first)
         controller.restore(first)
         assertEquals(12, runner.calls.size)
-        assertEquals("delete", runner.calls.last()[5])
+        assertEquals(
+            listOf("adb", "-s", "emulator-5554", "shell", "settings", "put", "global", "http_proxy", ":0"),
+            runner.calls[8],
+        )
         assertTrue(first.isRestored)
     }
 

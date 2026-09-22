@@ -109,7 +109,13 @@ class AdbAndroidProxyController(
     private fun restoreState(state: AndroidProxyState) {
         PROXY_SETTINGS.forEach { key ->
             val value = state.settings[key]
-            if (!value.isNullOrBlank() && !value.equals("null", ignoreCase = true)) {
+            if (key == "http_proxy" && (value.isNullOrBlank() || value.equals("null", ignoreCase = true))) {
+                // ConnectivityService observes the legacy combined setting but
+                // ignores an empty/deleted value, leaving its cached ProxyInfo
+                // active until reboot. Use the explicit direct-proxy sentinel
+                // so the observer clears the in-memory proxy as well.
+                run(listOf("shell", "settings", "put", "global", key, ":0"), "PROXY_RESTORE_FAILED")
+            } else if (!value.isNullOrBlank() && !value.equals("null", ignoreCase = true)) {
                 run(listOf("shell", "settings", "put", "global", key, value), "PROXY_RESTORE_FAILED")
             } else {
                 run(listOf("shell", "settings", "delete", "global", key), "PROXY_RESTORE_FAILED")
