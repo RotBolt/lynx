@@ -32,8 +32,9 @@ private data class RuntimeState(
 class PosixNativeNetworkStateStore(
     private val root: String = (getenv("HOME")?.toKString()?.takeIf(String::isNotBlank) ?: "/tmp") + "/.lynx/native-network",
     private val json: Json = Json { ignoreUnknownKeys = true; encodeDefaults = true },
-) : NativeNetworkStateStore {
+) : NativeNetworkStateStore, NativeMacProxyLeaseStore {
     private val statePath get() = "$root/state.json"
+    private val macProxyLeasePath get() = "$root/mac-proxy-lease.json"
     private val evidencePath get() = "$root/exchanges.jsonl"
     private val readyPath get() = "$root/worker.ready"
 
@@ -56,8 +57,22 @@ class PosixNativeNetworkStateStore(
     }
 
     fun workerReady(): Boolean = readText(readyPath)?.trim()?.isNotEmpty() == true
+    fun workerReady(port: Int): Boolean = readText(readyPath)?.trim() == port.toString()
 
     fun clearWorkerReady() { remove(readyPath) }
+
+    override fun load(): NativeMacProxyLease? = macProxyLease()
+
+    fun macProxyLease(): NativeMacProxyLease? = readText(macProxyLeasePath)?.trim()?.takeIf(String::isNotEmpty)?.let {
+        runCatching { json.decodeFromString(NativeMacProxyLease.serializer(), it) }.getOrNull()
+    }
+
+    override fun save(lease: NativeMacProxyLease) {
+        ensureRoot()
+        writeText(macProxyLeasePath, json.encodeToString(NativeMacProxyLease.serializer(), lease))
+    }
+
+    override fun clear() { remove(macProxyLeasePath) }
 
     override fun append(exchange: NetworkExchange) {
         ensureRoot()

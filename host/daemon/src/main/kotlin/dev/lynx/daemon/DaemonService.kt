@@ -209,10 +209,15 @@ class DaemonService(
             else -> return "ERROR INVALID_ARGUMENTS"
         } ?: return "ERROR NOT_FOUND"
         if (sessions.get(id) == null) return "ERROR NOT_FOUND"
+        val cleanupError = networkSource?.let { source ->
+            runCatching { kotlinx.coroutines.runBlocking { source.stop() } }.exceptionOrNull()
+        }
+        if (cleanupError != null) {
+            return "ERROR NETWORK_CLEANUP_FAILED ${cleanupError.message ?: cleanupError::class.simpleName}"
+        }
+        networkSource = null
         sessions.detach(id)
         detached = true
-        networkSource?.let { kotlinx.coroutines.runBlocking { it.stop() } }
-        networkSource = null
         databaseSource?.detach()
         databaseSource = null
         return "OK DETACHED"

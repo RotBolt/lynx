@@ -15,6 +15,7 @@ class PosixNativeNetworkInspector(
 ) : NativeNetworkInspector {
     private val androidProxy = NativeAndroidProxyController(processes)
     private val macProxy = NativeMacSystemProxyController(processes)
+    private val macRecovery = NativeMacProxyRecovery(macProxy, store)
     private val clientDispatcher = PosixNativeConnectionDispatcher()
 
     override fun execute(command: NetworkCommand): NetworkCommandResult = when (command) {
@@ -40,8 +41,20 @@ class PosixNativeNetworkInspector(
     private fun start(settings: NetworkCaptureSettings): NetworkCommandResult.Started {
         val port = if (settings.listenPort == 0) 62006 else settings.listenPort
         val endpoint = "${settings.listenHost}:$port"
+        if (store.isRunning() && store.endpoint() == endpoint) {
+            val running = capabilities().copy(proxyEndpoint = endpoint, proxyStatus = "running")
+            return NetworkCommandResult.Started(endpoint, running)
+        }
+        if (!store.isRunning()) macRecovery.restoreOwnedLease()
         val caps = capabilities().copy(proxyEndpoint = endpoint, proxyStatus = "starting")
-        val previousProxy = applyDeviceProxy(port, settings.listenHost)
+        val session = sessions.load()
+        val macLease = if (session?.deviceSerial?.startsWith("ios-simulator:") == true) {
+            require(settings.listenHost == "0.0.0.0" || settings.listenHost == "127.0.0.1") {
+                "iOS Simulator capture requires the native proxy to listen on the host"
+            }
+            macRecovery.prepareLease(endpoint, port)
+        } else null
+        val previousProxy = macLease?.previousProxyMap()
         store.clearWorkerReady()
         store.setRunning(endpoint, caps, previousProxy)
         // Launch the same native executable as a detached worker. Installers put `lynx` on PATH;
@@ -49,19 +62,22 @@ class PosixNativeNetworkInspector(
         val executable = getenv("LYNX_EXECUTABLE")?.toKString()?.takeIf(String::isNotBlank)
             ?: nativeExecutablePath()
             ?: "lynx"
-        PosixProcessRunner().run(listOf("sh", "-c", "(nohup '$executable' network worker $port >/dev/null 2>&1 </dev/null &)"))
+        processes.run(listOf("sh", "-c", "(nohup '$executable' network worker $port >/dev/null 2>&1 </dev/null &)"))
         try {
             repeat(40) {
-                if (store.workerReady()) {
+                if (store.workerReady(port)) {
+                    val activePreviousProxy = macLease?.let {
+                        macRecovery.activatePreparedLease(it).previousProxyMap()
+                    } ?: applyDeviceProxy(port, settings.listenHost)
                     val running = caps.copy(proxyStatus = "running")
-                    store.setRunning(endpoint, running, previousProxy)
+                    store.setRunning(endpoint, running, activePreviousProxy)
                     return NetworkCommandResult.Started(endpoint, running)
                 }
                 usleep(50_000u)
             }
             throw IllegalStateException("native network worker did not become ready; install lynx on PATH or set LYNX_EXECUTABLE")
         } catch (error: Throwable) {
-            runCatching { restoreProxy(previousProxy) }
+            runCatching { restoreDeviceProxy() }
             store.clearRunning()
             throw error
         }
@@ -84,9 +100,13 @@ class PosixNativeNetworkInspector(
     }
 
     private fun restoreDeviceProxy() {
+        if (store.macProxyLease() != null) {
+            macRecovery.restoreOwnedLease()
+            return
+        }
         val previous = store.previousProxy()
         if (previous?.get("controller") == "macos") {
-            macProxy.restore(previous)
+            macRecovery.restoreOwnedLease()
             return
         }
         val session = sessions.load() ?: return
@@ -124,6 +144,7 @@ class PosixNativeNetworkInspector(
                 if (client >= 0) clientDispatcher.dispatch { handle(client) } else usleep(50_000u)
             }
         } finally {
+            runCatching { restoreDeviceProxy() }
             store.clearWorkerReady()
             close(server)
         }

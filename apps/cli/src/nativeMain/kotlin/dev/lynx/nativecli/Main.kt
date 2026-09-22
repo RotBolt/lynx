@@ -33,7 +33,14 @@ class NativeCli(private val runner: NativeProcessRunner, private val network: Na
                 println(sessions.attach(device, packageName))
             }
             "status" -> println(sessions.status())
-            "detach" -> println(sessions.detach())
+            "detach" -> {
+                val cleanupError = runCatching { network.execute(NetworkCommand.Stop) }.exceptionOrNull()
+                if (cleanupError != null) {
+                    println("ERROR NETWORK_CLEANUP_FAILED ${cleanupError.message ?: cleanupError::class.simpleName}")
+                    return
+                }
+                println(sessions.detach())
+            }
             "db" -> runDatabase(args.drop(1))
             "network" -> runNetwork(args.drop(1))
             else -> println("Usage: lynx [--version|devices|db ...|network start|stop|list|get|doctor]")

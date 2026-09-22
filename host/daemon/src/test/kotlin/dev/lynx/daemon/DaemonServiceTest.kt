@@ -6,6 +6,8 @@ import kotlin.test.assertEquals
 import dev.lynx.adb.ResolvedTarget
 import dev.lynx.model.EvidenceFilter
 import dev.lynx.adb.AdbException
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 
 class DaemonServiceTest {
     @Test
@@ -34,6 +36,23 @@ class DaemonServiceTest {
 
         assertEquals("OK DETACHED", service.handle("DETACH"))
         assertEquals("ERROR NOT_FOUND", service.handle("STATUS"))
+    }
+
+    @Test
+    fun detachKeepsSessionWhenNetworkCleanupFails() {
+        val source = FailingStopNetworkSource()
+        val service = DaemonService(
+            targetResolver = TargetResolver { _, _ -> ResolvedTarget("emulator-5554", "com.example.app", 1234) },
+            networkFactory = NetworkSourceFactory { _, _ -> source },
+        )
+        val attached = service.handle("ATTACH emulator-5554 com.example.app")
+        val sessionId = attached.substringAfter("id=").substringBefore(" ").trim()
+        assertContains(service.handle("NETWORK_START"), "OK NETWORK_STARTED")
+
+        val detached = service.handle("DETACH")
+
+        assertContains(detached, "ERROR NETWORK_CLEANUP_FAILED")
+        assertContains(service.handle("STATUS $sessionId"), "OK ACTIVE")
     }
 
     @Test
@@ -81,4 +100,18 @@ class DaemonServiceTest {
         assertContains(service.handle("STATUS"), "pid=5678")
     }
 
+}
+
+private class FailingStopNetworkSource : NetworkCaptureSource {
+    override val endpoint: String = "127.0.0.1:62006"
+    override suspend fun start(config: NetworkCaptureConfig) = Unit
+    override suspend fun stop() {
+        error("restore failed")
+    }
+    override fun events(): Flow<NetworkDomainEvent> = emptyFlow()
+    override suspend fun capabilities(): NetworkCapabilities = NetworkCapabilities(
+        httpsMitm = true,
+        maxBodyBytes = 0,
+        limitations = emptyList(),
+    )
 }
