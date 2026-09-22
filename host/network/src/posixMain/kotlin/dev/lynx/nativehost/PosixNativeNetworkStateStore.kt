@@ -16,7 +16,9 @@ import platform.posix.fopen
 import platform.posix.fclose
 import platform.posix.fgets
 import platform.posix.fputs
+import platform.posix.getpid
 import platform.posix.remove
+import platform.posix.rename
 
 @Serializable
 private data class RuntimeState(
@@ -95,9 +97,16 @@ class PosixNativeNetworkStateStore(
     }
 
     private fun ensureRoot() { PosixProcessRunner().run(listOf("mkdir", "-p", root)) }
-    private fun writeText(path: String, value: String) {
-        val file = fopen(path, "w") ?: error("unable to write native network state")
-        try { fputs(value, file) } finally { fclose(file) }
+    private fun writeText(path: String, value: String) = memScoped {
+        // State is read concurrently by the detached proxy worker. Replacing the target in place
+        // briefly truncates it, which can make isRunning() mistake an update for network stop.
+        val temporaryPath = "$path.tmp.${getpid()}.${kotlin.time.Clock.System.now().toEpochMilliseconds()}"
+        val file = fopen(temporaryPath, "w") ?: error("unable to write temporary native network state")
+        val writeStatus = try { fputs(value, file) } finally { fclose(file) }
+        if (writeStatus < 0 || rename(temporaryPath, path) != 0) {
+            remove(temporaryPath)
+            error("unable to replace native network state")
+        }
     }
     private fun readText(path: String): String? {
         val file = fopen(path, "r") ?: return null

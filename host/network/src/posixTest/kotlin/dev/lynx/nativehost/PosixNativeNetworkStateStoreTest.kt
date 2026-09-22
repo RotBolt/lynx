@@ -1,32 +1,46 @@
 package dev.lynx.nativehost
 
-import dev.lynx.model.*
+import dev.lynx.model.NetworkCapabilities
+import kotlin.concurrent.atomics.AtomicInt
+import kotlin.concurrent.atomics.ExperimentalAtomicApi
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertTrue
+import platform.posix.usleep
 
+@OptIn(ExperimentalAtomicApi::class)
 class PosixNativeNetworkStateStoreTest {
     @Test
-    fun evidenceSurvivesASecondStoreInstanceAndFilters() {
-        val root = "/tmp/lynx-native-store-test-${kotlin.time.Clock.System.now().toEpochMilliseconds()}"
-        val first = PosixNativeNetworkStateStore(root)
-        val exchange = NetworkExchange(
-            EvidenceMeta(EvidenceId("ev-test"), SessionId("native"), kotlin.time.Clock.System.now(), EvidenceSource.NETWORK, "native", "test", null),
-            RequestId("req-test"), NetworkRequest("GET", "http://example.test/health", emptyMap(), null),
-            NetworkResponse(200, mapOf("Content-Type" to "text/plain"), "ok"), null,
-            NetworkTiming(1, 2, 1), NetworkCaptureMetadata(false, 0, false), protocol = "HTTP/1.1",
-        )
-        val previousProxy = mapOf("http_proxy" to "10.0.2.2:8080", "https_proxy" to null)
-        first.setRunning("127.0.0.1:62006", NetworkCapabilities(httpsMitm = false, supportedProtocols = listOf("HTTP/1.1")), previousProxy)
-        first.markWorkerReady(62006)
-        first.append(exchange)
-        val second = PosixNativeNetworkStateStore(root)
-        assertTrue(second.isRunning())
-        assertTrue(second.workerReady())
-        assertEquals(previousProxy, second.previousProxy())
-        assertEquals("req-test", second.list(NetworkFilter(status = 200)).single().requestId.value)
-        assertEquals(exchange, second.get(RequestId("req-test")))
-        second.clearWorkerReady()
-        second.clearRunning()
+    fun runningStateReadersNeverObserveAnInProgressRewriteAsStopped() {
+        val root = "/tmp/lynx-network-state-test-${kotlin.time.Clock.System.now().toEpochMilliseconds()}"
+        val store = PosixNativeNetworkStateStore(root)
+        val payload = "x".repeat(256 * 1024)
+        val capabilities = NetworkCapabilities(httpsMitm = true, limitations = listOf(payload))
+        store.setRunning("0.0.0.0:62006", capabilities)
+
+        val readerReady = AtomicInt(0)
+        val continueReading = AtomicInt(1)
+        val observedStoppedState = AtomicInt(0)
+        PosixNativeConnectionDispatcher().dispatch {
+            val reader = PosixNativeNetworkStateStore(root)
+            readerReady.store(1)
+            while (continueReading.load() == 1) {
+                if (!reader.isRunning()) observedStoppedState.store(1)
+            }
+        }
+
+        try {
+            repeat(2_000) {
+                if (readerReady.load() == 1) return@repeat
+                usleep(1_000u)
+            }
+            assertEquals(1, readerReady.load(), "background state reader did not start")
+            repeat(12) { store.setRunning("0.0.0.0:62006", capabilities) }
+        } finally {
+            continueReading.store(0)
+            store.clearRunning()
+            PosixProcessRunner().run(listOf("rmdir", root))
+        }
+
+        assertEquals(0, observedStoppedState.load(), "reader observed the state file while it was being rewritten")
     }
 }
