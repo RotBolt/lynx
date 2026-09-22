@@ -86,10 +86,10 @@ The macOS native binary can resolve the simulator app container through
 `simctl` and inspect the copied SQLite file:
 
 ```bash
-lynx db list --platform ios --device <simulator-udid> \
-  --package dev.lynx.dummyapp
+lynx db list --platform ios --simulator <simulator-udid> \
+  --bundle-id dev.lynx.dummyapp
 lynx db snapshot Documents/dummyapp.db --platform ios \
-  --device <simulator-udid> --package dev.lynx.dummyapp
+  --simulator <simulator-udid> --bundle-id dev.lynx.dummyapp
 lynx db tables /tmp/lynx-native-Documents_dummyapp.db.db \
   --package dev.lynx.dummyapp
 lynx db query /tmp/lynx-native-Documents_dummyapp.db.db \
@@ -98,8 +98,9 @@ lynx db query /tmp/lynx-native-Documents_dummyapp.db.db \
 
 Snapshots are copied through `adb shell run-as` on Android or `simctl` on iOS;
 SQLite inspection is performed by the host `sqlite3` command in read-only mode.
-Both platforms use the same `db list` / `db snapshot` syntax; select the target
-with `--platform`, `--device`, and `--package`. Native `network start`, `stop`,
+Both platforms use the same `db list` / `db snapshot` syntax. Android targets
+use `--device` (ADB serial) and `--package` (application ID); iOS Simulator
+targets use `--simulator` (UDID) and `--bundle-id`. Native `network start`, `stop`,
 `list`, `get`, and `doctor` share a JSONL evidence store across independent
 invocations. The native proxy forwards and records cleartext HTTP/1.1, HTTPS
 CONNECT, and HTTP/2 traffic using the host OpenSSL and nghttp2 runtimes. The

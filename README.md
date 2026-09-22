@@ -71,13 +71,13 @@ lynx db snapshot databases/dummyapp.db \
 ```
 
 The same `db list` and `db snapshot` commands work with an iOS Simulator by
-changing `--platform` to `ios` and passing its UDID to `--device`:
+changing `--platform` to `ios` and passing its UDID and bundle identifier:
 
 ```bash
-lynx db list --platform ios --device <simulator-udid> \
-  --package dev.lynx.dummyapp
+lynx db list --platform ios --simulator <simulator-udid> \
+  --bundle-id dev.lynx.dummyapp
 lynx db snapshot Documents/dummyapp.db --platform ios \
-  --device <simulator-udid> --package dev.lynx.dummyapp
+  --simulator <simulator-udid> --bundle-id dev.lynx.dummyapp
 ```
 
 The native executable supports persistent HTTP/1.1 and HTTPS MITM capture across

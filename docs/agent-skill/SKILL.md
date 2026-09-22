@@ -47,10 +47,10 @@ lynx db snapshot databases/dummyapp.db \
 For iOS Simulator, keep the same command names and use the simulator UDID:
 
 ```bash
-lynx db list --platform ios --device <simulator-udid> \
-  --package dev.lynx.dummyapp --json
+lynx db list --platform ios --simulator <simulator-udid> \
+  --bundle-id dev.lynx.dummyapp --json
 lynx db snapshot Documents/dummyapp.db --platform ios \
-  --device <simulator-udid> --package dev.lynx.dummyapp --json
+  --simulator <simulator-udid> --bundle-id dev.lynx.dummyapp --json
 ```
 
 Read `snapshot_id` from the response, then inspect schema and data:

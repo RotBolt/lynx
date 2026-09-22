@@ -58,7 +58,7 @@ lynx db query --snapshot snap_10 "SELECT * FROM pending_actions" --json
 ```
 
 For an iOS Simulator, keep `db list` and `db snapshot` and select the target
-with `--platform ios --device <simulator-udid> --package <bundle-id>`.
+with `--platform ios --simulator <simulator-udid> --bundle-id <bundle-id>`.
 
 The agent should be able to reason:
 

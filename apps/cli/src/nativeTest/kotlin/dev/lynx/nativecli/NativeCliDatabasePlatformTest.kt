@@ -27,12 +27,12 @@ class NativeCliDatabasePlatformTest {
     }
 
     @Test
-    fun iosListUsesTheSameListCommandWithSimulatorDeviceId() {
+    fun iosListUsesTheSameListCommandWithSimulatorAndBundleIdFlags() {
         val runner = RecordingRunner()
         cli(runner).run(
             listOf(
-                "db", "list", "--platform", "ios", "--device", "25CD22C1-E1F2-417F-87BA-09D7600F3B93",
-                "--package", "dev.lynx.dummyapp",
+                "db", "list", "--platform", "ios", "--simulator", "25CD22C1-E1F2-417F-87BA-09D7600F3B93",
+                "--bundle-id", "dev.lynx.dummyapp",
             ),
         )
 
@@ -44,12 +44,12 @@ class NativeCliDatabasePlatformTest {
     }
 
     @Test
-    fun iosSnapshotUsesTheSameSnapshotCommandWithSimulatorDeviceId() {
+    fun iosSnapshotUsesTheSameSnapshotCommandWithSimulatorAndBundleIdFlags() {
         val runner = RecordingRunner()
         cli(runner).run(
             listOf(
                 "db", "snapshot", "Documents/dummyapp.db", "--platform", "ios",
-                "--device", "25CD22C1-E1F2-417F-87BA-09D7600F3B93", "--package", "dev.lynx.dummyapp",
+                "--simulator", "25CD22C1-E1F2-417F-87BA-09D7600F3B93", "--bundle-id", "dev.lynx.dummyapp",
             ),
         )
 

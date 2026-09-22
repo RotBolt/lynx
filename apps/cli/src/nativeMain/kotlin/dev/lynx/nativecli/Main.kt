@@ -86,13 +86,12 @@ class NativeCli(private val runner: NativeProcessRunner, private val network: Na
         when (command) {
             "list" -> {
                 val platform = option(args, "--platform") ?: error("--platform android|ios is required")
-                val device = option(args, "--device") ?: error("--device is required")
-                val packageName = option(args, "--package") ?: error("--package is required")
+                val target = databaseTarget(args, platform)
                 val invocation = when (platform.lowercase()) {
-                    "android" -> listOf("adb", "-s", device, "shell", "run-as", packageName, "find", "databases", "-type", "f")
+                    "android" -> listOf("adb", "-s", target.first, "shell", "run-as", target.second, "find", "databases", "-type", "f")
                     "ios" -> listOf(
                         "sh", "-c",
-                        "root=\$(xcrun simctl get_app_container ${quote(device)} ${quote(packageName)} data); cd \"\$root\" && find . -name '*.db' -type f | sed 's#^\\./##'",
+                        "root=\$(xcrun simctl get_app_container ${quote(target.first)} ${quote(target.second)} data); cd \"\$root\" && find . -name '*.db' -type f | sed 's#^\\./##'",
                     )
                     else -> error("unsupported platform '$platform'; expected android or ios")
                 }
@@ -101,18 +100,17 @@ class NativeCli(private val runner: NativeProcessRunner, private val network: Na
             "snapshot" -> {
                 val database = args.getOrNull(1)?.let(::DatabaseId) ?: error("database path is required")
                 val platform = option(args, "--platform") ?: error("--platform android|ios is required")
-                val device = option(args, "--device") ?: error("--device is required")
-                val packageName = option(args, "--package") ?: error("--package is required")
+                val target = databaseTarget(args, platform)
                 requireSafeRelativePath(database.value)
                 val path = "/tmp/lynx-native-${safeName(database.value)}.db"
                 val result = when (platform.lowercase()) {
                     "android" -> {
-                        val shell = listOf("adb", "-s", device, "exec-out", "run-as", packageName, "cat", database.value)
+                        val shell = listOf("adb", "-s", target.first, "exec-out", "run-as", target.second, "cat", database.value)
                             .joinToString(" ") { quote(it) }
                         runner.run(listOf("sh", "-c", "$shell > ${quote(path)}"))
                     }
                     "ios" -> {
-                        val rootCommand = "root=\$(xcrun simctl get_app_container ${quote(device)} ${quote(packageName)} data)"
+                        val rootCommand = "root=\$(xcrun simctl get_app_container ${quote(target.first)} ${quote(target.second)} data)"
                         runner.run(listOf("sh", "-c", "$rootCommand && cp \"\$root/${database.value}\" ${quote(path)}"))
                     }
                     else -> error("unsupported platform '$platform'; expected android or ios")
@@ -130,6 +128,17 @@ class NativeCli(private val runner: NativeProcessRunner, private val network: Na
             }
             else -> error("Usage: lynx db [list|snapshot|tables|query] ...")
         }
+    }
+
+    /** Returns the platform target ID and app identifier for DB discovery and snapshots. */
+    private fun databaseTarget(args: List<String>, platform: String): Pair<String, String> = when (platform.lowercase()) {
+        "android" -> (option(args, "--device") ?: error("Android requires --device <adb-serial>")) to
+            (option(args, "--package") ?: error("Android requires --package <application-id>"))
+        "ios" -> (option(args, "--simulator") ?: option(args, "--device")
+            ?: error("iOS requires --simulator <simulator-udid>")) to
+            (option(args, "--bundle-id") ?: option(args, "--package")
+                ?: error("iOS requires --bundle-id <bundle-id>"))
+        else -> error("unsupported platform '$platform'; expected android or ios")
     }
 
     private fun option(args: List<String>, name: String): String? = args.windowed(2, 1).firstOrNull { it[0] == name }?.getOrNull(1)

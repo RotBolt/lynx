@@ -76,10 +76,10 @@ to retrieve one complete exchange.
 ## Database inspection
 
 ```bash
-$LYNX db list --platform ios --device "$UDID" \
-  --package dev.lynx.dummyapp --json
-$LYNX db snapshot Documents/dummyapp.db --platform ios --device "$UDID" \
-  --package dev.lynx.dummyapp --json
+$LYNX db list --platform ios --simulator "$UDID" \
+  --bundle-id dev.lynx.dummyapp --json
+$LYNX db snapshot Documents/dummyapp.db --platform ios --simulator "$UDID" \
+  --bundle-id dev.lynx.dummyapp --json
 
 # Copy the snapshot_id from the snapshot response.
 $LYNX db tables --snapshot <snapshot_id> --json
