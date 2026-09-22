@@ -14,7 +14,7 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "lynx-dummyapp"
+rootProject.name = "lynx-sample-app"
 
 include(":shared")
 include(":androidApp")

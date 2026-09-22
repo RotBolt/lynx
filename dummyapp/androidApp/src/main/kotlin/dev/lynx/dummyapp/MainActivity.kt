@@ -25,7 +25,7 @@ class MainActivity : Activity() {
         requestWindowFeature(Window.FEATURE_NO_TITLE)
         super.onCreate(savedInstanceState)
         handle = AndroidScenarioHandle.create(this)
-        status = TextView(this).apply { text = "Lynx Dummy App — no requests run automatically" }
+        status = TextView(this).apply { text = "Lynx Sample App — no requests run automatically" }
         websocketStart = Button(this).apply {
             text = "WebSocket Start"
             setOnClickListener { scope.launch { startWebSocket() } }

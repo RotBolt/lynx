@@ -16,7 +16,7 @@ kotlin {
 
     targets.withType<org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget>().configureEach {
         binaries.framework {
-            baseName = "DummyShared"
+            baseName = "SampleShared"
             isStatic = true
         }
     }

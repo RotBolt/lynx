@@ -37,7 +37,7 @@ interface ExchangeStore {
     fun observe(): Flow<ExchangeResult>
 }
 
-interface DummyScenario {
+interface SampleScenario {
     suspend fun requestHttp1(): ExchangeResult
     suspend fun requestHttp2(): ExchangeResult
     suspend fun startWebSocket(): ExchangeResult
@@ -45,19 +45,18 @@ interface DummyScenario {
 }
 
 data class ScenarioEndpoints(
-    // These are public services, not the local fixture server. The first URL
-    // intentionally stays cleartext to exercise HTTP/1.1; the second exercises
-    // HTTPS/HTTP/2, and Postman Echo provides a public TLS WebSocket echo.
-    val http1: String = "http://httpbin.org/get?source=lynx-dummy-http1",
-    val http2: String = "https://jsonplaceholder.typicode.com/todos/1?source=lynx-dummy-http2",
+    // Calls go directly through the platform's ordinary networking stack.
+    // No app-level proxy configuration is used.
+    val http1: String = "http://httpbin.org/get?source=lynx-sample-http1",
+    val http2: String = "https://jsonplaceholder.typicode.com/todos/1?source=lynx-sample-http2",
     val websocket: String = "wss://ws.postman-echo.com/raw",
 )
 
-class KtorDummyScenario(
+class KtorSampleScenario(
     private val client: HttpClient,
     private val store: ExchangeStore,
     private val endpoints: ScenarioEndpoints = ScenarioEndpoints(),
-) : DummyScenario {
+) : SampleScenario {
     private var websocket: WebSocketSession? = null
 
     override suspend fun requestHttp1(): ExchangeResult = executeHttp(TransportKind.HTTP_1_1, endpoints.http1)
@@ -82,11 +81,11 @@ class KtorDummyScenario(
         return try {
             val session = client.webSocketSession(urlString = url)
             websocket = session
-            session.send("lynx-dummy-ping")
+            session.send("lynx-sample-ping")
             val echoed = (session.incoming.receive() as? Frame.Text)?.readText().orEmpty()
-            ExchangeResult(TransportKind.WEBSOCKET, "GET", url, 101, "lynx-dummy-ping", echoed, null, started, currentEpochMillis())
+            ExchangeResult(TransportKind.WEBSOCKET, "GET", url, 101, "lynx-sample-ping", echoed, null, started, currentEpochMillis())
         } catch (error: Throwable) {
-            ExchangeResult(TransportKind.WEBSOCKET, "GET", url, null, "lynx-dummy-ping", null, error.message ?: error::class.simpleName, started, currentEpochMillis())
+            ExchangeResult(TransportKind.WEBSOCKET, "GET", url, null, "lynx-sample-ping", null, error.message ?: error::class.simpleName, started, currentEpochMillis())
         }.also { store.append(it) }
     }
 

@@ -3,9 +3,9 @@ package dev.lynx.dummyapp
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
-class AndroidFixtureContractTest {
+class AndroidSampleContractTest {
     @Test
-    fun fixtureCoversAllInspectorTransports() {
+    fun sampleProvidesExplicitActionsForAllInspectorTransports() {
         assertEquals(
             listOf(TransportKind.HTTP_1_1, TransportKind.HTTP_2, TransportKind.WEBSOCKET),
             TransportKind.entries,

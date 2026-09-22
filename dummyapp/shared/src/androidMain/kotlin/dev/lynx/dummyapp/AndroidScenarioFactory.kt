@@ -6,7 +6,7 @@ import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.websocket.WebSockets
 
 class AndroidScenarioHandle private constructor(
-    val scenario: DummyScenario,
+    val scenario: SampleScenario,
     private val client: HttpClient,
     private val store: AndroidExchangeStore,
 ) {
@@ -19,7 +19,7 @@ class AndroidScenarioHandle private constructor(
         fun create(context: Context): AndroidScenarioHandle {
             val client = HttpClient(OkHttp) { install(WebSockets) }
             val store = AndroidExchangeStore(context)
-            return AndroidScenarioHandle(KtorDummyScenario(client, store), client, store)
+            return AndroidScenarioHandle(KtorSampleScenario(client, store), client, store)
         }
     }
 }

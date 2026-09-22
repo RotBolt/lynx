@@ -1,7 +1,7 @@
 import Foundation
 import SQLite3
 import UIKit
-import DummyShared
+import SampleShared
 
 final class AppDelegate: UIResponder, UIApplicationDelegate {
     private static let sqliteTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
@@ -20,7 +20,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         let label = UILabel()
         label.textAlignment = .center
         label.numberOfLines = 0
-        label.text = "Lynx Dummy App\nNo requests run automatically"
+        label.text = "Lynx Sample App\nNo requests run automatically"
         statusLabel = label
 
         let http1 = button("HTTP/1.1 Call", #selector(callHttp1))
@@ -45,18 +45,17 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         window?.rootViewController = controller
         window?.makeKeyAndVisible()
 
-        // Touch the shared KMP framework so the iOS fixture is built against
-        // the same common module as the Android target.
-        _ = FixtureMetadata.shared.name()
+        // Link the sample app against the same shared KMP module as Android.
+        _ = SampleMetadata.shared.name()
         return true
     }
 
     @objc private func callHttp1() {
-        request(URL(string: "http://httpbin.org/get?source=lynx-dummy-http1")!, kind: "HTTP_1_1")
+        request(URL(string: "http://httpbin.org/get?source=lynx-sample-http1")!, kind: "HTTP_1_1")
     }
 
     @objc private func callHttp2() {
-        request(URL(string: "https://jsonplaceholder.typicode.com/todos/1?source=lynx-dummy-http2")!, kind: "HTTP_2")
+        request(URL(string: "https://jsonplaceholder.typicode.com/todos/1?source=lynx-sample-http2")!, kind: "HTTP_2")
     }
 
     @objc private func startWebSocket() {
@@ -67,7 +66,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         websocketStartButton?.isEnabled = false
         websocketCloseButton?.isEnabled = true
         task.resume()
-        task.send(.string("lynx-dummy-ping")) { [weak self] error in
+        task.send(.string("lynx-sample-ping")) { [weak self] error in
             if let error {
                 self?.save(kind: "WEBSOCKET", url: websocket.absoluteString, status: nil, body: nil, error: error.localizedDescription)
                 DispatchQueue.main.async { self?.finishWebSocket(error: error.localizedDescription) }

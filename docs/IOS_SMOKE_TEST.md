@@ -1,11 +1,11 @@
 # iOS Simulator smoke test (native `lynx`) 🧪
 
-This verifies the native macOS executable against the real iOS Simulator
-fixture, including explicit HTTP/1.1, HTTP/2, and WebSocket button actions.
+This verifies the native macOS executable against the iOS Simulator sample
+app, including explicit HTTP/1.1, HTTP/2, and WebSocket button actions.
 
 This is the reproducible macOS smoke test for the currently supported iOS
-target. It verifies that Lynx can attach to the fixture, capture HTTP/1.1,
-HTTP/2, and WebSocket traffic, and inspect the fixture's SQLite database.
+target. It verifies that Lynx can attach to the sample app, capture HTTP/1.1,
+HTTP/2, and WebSocket traffic, and inspect the app's SQLite database.
 
 ## Prerequisites
 
@@ -32,7 +32,7 @@ UDID=<booted-simulator-udid>
 ```bash
 dummyapp/iosApp/build-simulator.sh
 xcrun simctl install "$UDID" \
-  dummyapp/iosApp/build/Debug-iphonesimulator/LynxDummyApp.app
+  dummyapp/iosApp/build/Debug-iphonesimulator/LynxSampleApp.app
 
 $LYNX attach ios-simulator:"$UDID" dev.lynx.dummyapp
 ```
@@ -43,8 +43,8 @@ host PID. The database commands use the same command names on both platforms:
 
 ## Trust and network capture
 
-Install/trust the current Lynx CA, start the host proxy, and relaunch the app
-so all three fixture calls occur after capture has started:
+First, with Lynx stopped, tap each sample-app action and verify its own status
+shows the direct API result. Then start a separate Lynx capture run:
 
 ```bash
 $LYNX network ca show --json

@@ -3,7 +3,7 @@
 
     <application
         android:allowBackup="false"
-        android:label="Lynx Dummy App"
+        android:label="Lynx Sample App"
         android:networkSecurityConfig="@xml/network_security_config"
         android:supportsRtl="true">
         <activity

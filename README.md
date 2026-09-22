@@ -137,10 +137,10 @@ $LYNX network ca install --android emulator-5554 --json
 $LYNX network ca install --ios-simulator <simulator-udid> --json
 ```
 
-## Build from source and verify fixtures 🛠️
+## Build from source and verify the sample app 🛠️
 
 This section is for contributors and maintainers who want to build Lynx or run
-the deterministic Android/iOS fixture. Regular developers should use the
+the Android/iOS sample app. Regular developers should use the
 released executable above.
 
 Build the native executable locally on macOS Apple Silicon:
@@ -153,16 +153,16 @@ Build the native executable locally on macOS Apple Silicon:
 For the complete Android attach, HTTP/2, database, restart, and detach smoke
 test, see [the manual smoke test](lynx-spec/MANUAL_SMOKE_TEST.md). For the
 complete iOS Simulator build/install/capture/query sequence, see the
-[iOS Simulator smoke test](docs/IOS_SMOKE_TEST.md). The short iOS fixture setup
+[iOS Simulator smoke test](docs/IOS_SMOKE_TEST.md). The short iOS sample-app setup
 is:
 
 ```bash
 dummyapp/iosApp/build-simulator.sh
 xcrun simctl install <simulator-udid> \
-  dummyapp/iosApp/build/Debug-iphonesimulator/LynxDummyApp.app
+  dummyapp/iosApp/build/Debug-iphonesimulator/LynxSampleApp.app
 ```
 
-The fixture emits HTTP/1.1, HTTP/2, and WebSocket exchanges and stores the
+The sample app emits HTTP/1.1, HTTP/2, and WebSocket exchanges and stores the
 corresponding evidence in SQLite. Native database smoke commands are documented
 in [native distribution](docs/distribution/native.md).
 
@@ -236,7 +236,7 @@ not part of the current working CLI:
 ## Continuous integration 🧪
 
 Every push to `main`, pull request, and manual workflow dispatch runs the host
-unit/integration suite, shared fixture tests, an Android emulator UI/integration
+unit/integration suite, shared sample-app tests, an Android emulator UI/integration
 smoke test, and an iOS Simulator UI/integration smoke test on macOS. Hosted
 runners without a compatible iOS Simulator runtime/SDK report a visible warning
 and skip only that platform UI smoke test; they do not report a false pass.

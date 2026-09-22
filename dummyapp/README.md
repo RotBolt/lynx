@@ -1,25 +1,28 @@
-# Lynx Dummy App
+# Lynx Sample App
 
-KMP fixture used to exercise Lynx network and SQLite inspection. It is kept
-separate from the production Lynx modules.
+Small KMP sample application for manually exercising Lynx network and SQLite
+inspection. It is separate from the production Lynx modules.
 
 Status: 🚧 under construction.
 
-The fixture provides Android and iOS simulator targets. It makes real requests
-only after a developer presses a button: plain HTTP/1.1 to HTTPBin,
-HTTPS/HTTP/2 to JSONPlaceholder, and TLS WebSocket echo to Postman Echo. The
-WebSocket has separate Start and Close controls. No local test server or
-application-level proxy setting is involved in the network capture path.
+The app has Android and iOS Simulator targets. On explicit button presses it
+makes ordinary app-origin requests to public services: HTTP/1.1 to HTTPBin,
+HTTPS (negotiated as HTTP/2 when the platform supports it) to JSONPlaceholder,
+and a TLS WebSocket echo to Postman Echo. The WebSocket has separate Start and
+Close controls. No network request is made on launch or on a timer, and the app
+does not configure a proxy. Mock responses are confined to unit tests; there is
+no local fixture server in the sample app.
 
-Build the iOS simulator fixture with `iosApp/build-simulator.sh`; it produces
+Build the iOS simulator app with `iosApp/build-simulator.sh`; it produces
 an installable `.app` bundle for the booted arm64 simulator.
 
 Each button runs only its corresponding request; there are no startup calls,
 timers, or overlapping background scenarios. The app persists actual URLs,
 statuses, response bodies, and errors to `network_events` for database
-inspection. Start Lynx capture before pressing the desired button. Public
-service availability and response status can vary; the validation is whether
-Lynx captures the app-origin request and negotiated protocol.
+inspection. Test the app's direct request first with Lynx stopped; then run a
+separate Lynx capture test and press the same button. Public service
+availability and response status can vary, and negotiated protocol must be
+verified from the observed exchange rather than inferred from the button name.
 
 Example iOS inspection flow:
 
@@ -29,7 +32,7 @@ UDID=<booted-simulator-udid>
 LYNX=lynx
 xcrun simctl boot "$UDID" || true
 ./iosApp/build-simulator.sh
-xcrun simctl install "$UDID" iosApp/build/Debug-iphonesimulator/LynxDummyApp.app
+xcrun simctl install "$UDID" iosApp/build/Debug-iphonesimulator/LynxSampleApp.app
 $LYNX attach --device ios-simulator:$UDID --package dev.lynx.dummyapp --json
 $LYNX network ca install --ios-simulator "$UDID" --json
 $LYNX network start --json

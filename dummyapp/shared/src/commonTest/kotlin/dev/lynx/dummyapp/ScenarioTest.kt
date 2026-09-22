@@ -17,8 +17,8 @@ class ScenarioTest {
     fun defaultScenarioUsesPublicInternetEndpointsForEveryTransport() {
         val endpoints = ScenarioEndpoints()
 
-        assertEquals("http://httpbin.org/get?source=lynx-dummy-http1", endpoints.http1)
-        assertEquals("https://jsonplaceholder.typicode.com/todos/1?source=lynx-dummy-http2", endpoints.http2)
+        assertEquals("http://httpbin.org/get?source=lynx-sample-http1", endpoints.http1)
+        assertEquals("https://jsonplaceholder.typicode.com/todos/1?source=lynx-sample-http2", endpoints.http2)
         assertEquals("wss://ws.postman-echo.com/raw", endpoints.websocket)
         assertEquals(false, listOf(endpoints.http1, endpoints.http2, endpoints.websocket)
             .any { it.contains("10.0.2.2") || it.contains("localhost") || it.contains("127.0.0.1") })
@@ -55,7 +55,7 @@ class ScenarioTest {
                 }
             }
         }
-        val scenario = KtorDummyScenario(
+        val scenario = KtorSampleScenario(
             client = client,
             store = store,
             endpoints = ScenarioEndpoints(
