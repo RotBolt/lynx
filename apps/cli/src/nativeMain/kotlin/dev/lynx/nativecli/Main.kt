@@ -66,6 +66,7 @@ class NativeCli(private val runner: NativeProcessRunner, private val network: Na
             "get" -> NetworkCommand.Get(RequestId(args.getOrNull(1) ?: error("request id is required")))
             "doctor" -> NetworkCommand.Doctor
             "worker" -> { networkWorker(option(args, "--port")?.toIntOrNull() ?: args.getOrNull(1)?.toIntOrNull() ?: error("port is required")); return }
+            "supervisor" -> { networkSupervisor(option(args, "--port")?.toIntOrNull() ?: args.getOrNull(1)?.toIntOrNull() ?: error("port is required")); return }
             else -> error("Usage: lynx network [start|stop|list|get|doctor]")
         }
         println(json.encodeToString(normalizeNetworkJson(json.encodeToJsonElement(network.execute(command)))))
@@ -73,6 +74,10 @@ class NativeCli(private val runner: NativeProcessRunner, private val network: Na
 
     private fun networkWorker(port: Int) {
         network.worker(port)
+    }
+
+    private fun networkSupervisor(port: Int) {
+        network.supervisor(port)
     }
 
     private fun normalizeNetworkJson(element: JsonElement): JsonElement = when (element) {

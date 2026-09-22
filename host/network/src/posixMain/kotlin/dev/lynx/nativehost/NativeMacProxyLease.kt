@@ -33,6 +33,13 @@ data class NativeMacProxyLease(
     val webRestored: Boolean = false,
     val secureRestored: Boolean = false,
     val lastError: String? = null,
+    val workerPid: Int? = null,
+    val workerStartIdentity: String? = null,
+    val supervisorPid: Int? = null,
+    val captureToken: String? = null,
+    val pacUrl: String? = null,
+    val autodiscoveryEnabled: Boolean = false,
+    val bypassDomains: List<String> = emptyList(),
 ) {
     fun previousProxyMap() = mapOf(
         "controller" to "macos",
@@ -48,10 +55,8 @@ data class NativeMacProxyLease(
     fun hasAppliedSettings(): Boolean = webApplied || secureApplied
     fun isFullyRestored(): Boolean = (!webApplied || webRestored) && (!secureApplied || secureRestored)
 }
-
 interface NativeMacProxyLeaseStore {
     fun load(): NativeMacProxyLease?
     fun save(lease: NativeMacProxyLease)
     fun clear()
 }
-

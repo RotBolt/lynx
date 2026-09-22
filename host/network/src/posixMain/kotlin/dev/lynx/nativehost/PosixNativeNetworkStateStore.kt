@@ -25,6 +25,10 @@ private data class RuntimeState(
     val endpoint: String,
     val capabilities: NetworkCapabilities,
     val previousProxy: Map<String, String?>? = null,
+    val workerPid: Int? = null,
+    val workerStartIdentity: String? = null,
+    val supervisorPid: Int? = null,
+    val captureToken: String? = null,
 )
 
 /** JSONL evidence store. Files are intentionally plain and portable across native processes. */
@@ -37,14 +41,39 @@ class PosixNativeNetworkStateStore(
     private val macProxyLeasePath get() = "$root/mac-proxy-lease.json"
     private val evidencePath get() = "$root/exchanges.jsonl"
     private val readyPath get() = "$root/worker.ready"
+    private val supervisorReadyPath get() = "$root/supervisor.ready"
 
     override fun isRunning(): Boolean = readState() != null
     override fun endpoint(): String? = readState()?.endpoint
     override fun capabilities(): NetworkCapabilities? = readState()?.capabilities
+    fun workerPid(): Int? = readState()?.workerPid
+    fun workerIdentity(): NativeWorkerIdentity? = readState()?.let { state ->
+        state.workerPid?.let { pid -> state.workerStartIdentity?.let { NativeWorkerIdentity(pid, it) } }
+    }
+    fun supervisorPid(): Int? = readState()?.supervisorPid
+    fun captureToken(): String? = readState()?.captureToken
 
     override fun setRunning(endpoint: String, capabilities: NetworkCapabilities, previousProxy: Map<String, String?>?) {
+        setRunning(endpoint, capabilities, previousProxy, workerPid = null, workerStartIdentity = null, supervisorPid = null, captureToken = null)
+    }
+
+    fun setRunning(
+        endpoint: String,
+        capabilities: NetworkCapabilities,
+        previousProxy: Map<String, String?>?,
+        workerPid: Int?,
+        workerStartIdentity: String?,
+        supervisorPid: Int?,
+        captureToken: String?,
+    ) {
         ensureRoot()
-        writeText(statePath, json.encodeToString(RuntimeState.serializer(), RuntimeState(endpoint, capabilities, previousProxy)))
+        writeText(
+            statePath,
+            json.encodeToString(
+                RuntimeState.serializer(),
+                RuntimeState(endpoint, capabilities, previousProxy, workerPid, workerStartIdentity, supervisorPid, captureToken),
+            ),
+        )
     }
     override fun previousProxy(): Map<String, String?>? = readState()?.previousProxy
 
@@ -56,10 +85,36 @@ class PosixNativeNetworkStateStore(
         writeText(readyPath, "$port\n")
     }
 
+    fun markWorkerReady(port: Int, captureToken: String, workerPid: Int) {
+        ensureRoot()
+        writeText(readyPath, "$port $captureToken $workerPid\n")
+    }
+
     fun workerReady(): Boolean = readText(readyPath)?.trim()?.isNotEmpty() == true
     fun workerReady(port: Int): Boolean = readText(readyPath)?.trim() == port.toString()
+    fun workerReady(port: Int, captureToken: String, workerPid: Int?): Boolean {
+        val parts = readText(readyPath)?.trim()?.split(Regex("\\s+")) ?: return false
+        if (parts.size != 3) return false
+        if (parts[0].toIntOrNull() != port || parts[1] != captureToken) return false
+        val readyPid = parts[2].toIntOrNull() ?: return false
+        return workerPid == null || readyPid == workerPid
+    }
 
     fun clearWorkerReady() { remove(readyPath) }
+
+    fun markSupervisorReady(captureToken: String, supervisorPid: Int) {
+        ensureRoot()
+        writeText(supervisorReadyPath, "$captureToken $supervisorPid\n")
+    }
+
+    fun supervisorReady(captureToken: String, supervisorPid: Int?): Boolean {
+        val parts = readText(supervisorReadyPath)?.trim()?.split(Regex("\\s+")) ?: return false
+        if (parts.size != 2 || parts[0] != captureToken) return false
+        val readyPid = parts[1].toIntOrNull() ?: return false
+        return supervisorPid == null || readyPid == supervisorPid
+    }
+
+    fun clearSupervisorReady() { remove(supervisorReadyPath) }
 
     override fun load(): NativeMacProxyLease? = macProxyLease()
 

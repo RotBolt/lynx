@@ -6,6 +6,24 @@ import kotlin.test.assertTrue
 
 class NativeMacSystemProxyControllerTest {
     @Test
+    fun selectsTheNetworkServiceForTheActiveRouteInsteadOfTheFirstHardwarePort() {
+        val runner = StatefulNetworksetupRunner(
+            activeInterface = "en0",
+            networkServiceOrder = """
+                (1) Thunderbolt Bridge
+                (Hardware Port: Thunderbolt Bridge, Device: bridge0)
+
+                (2) Wi-Fi
+                (Hardware Port: Wi-Fi, Device: en0)
+            """.trimIndent(),
+        )
+
+        val snapshot = NativeMacSystemProxyController(runner = runner, service = null).inspect()
+
+        assertEquals("Wi-Fi", snapshot.service)
+    }
+
+    @Test
     fun appliesLoopbackProxyAndRestoresExactPriorWebAndSecureProxyState() {
         val runner = RecordingRunner(
             listOf(

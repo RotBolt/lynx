@@ -18,6 +18,11 @@ class StatefulNetworksetupRunner(
     web: ProxyFixture = ProxyFixture(),
     secure: ProxyFixture = ProxyFixture(),
     private val failures: MutableMap<String, String> = mutableMapOf(),
+    var pacEnabled: Boolean = false,
+    var autodiscoveryEnabled: Boolean = false,
+    var bypassDomains: List<String> = emptyList(),
+    private val activeInterface: String? = null,
+    private val networkServiceOrder: String = "",
 ) : NativeProcessRunner {
     var web: ProxyFixture = web
         private set
@@ -30,8 +35,13 @@ class StatefulNetworksetupRunner(
         val action = command.getOrNull(1).orEmpty()
         failures.remove(action)?.let { return NativeCommandResult(1, "", it) }
         return when (action) {
+            "--nwi" -> NativeCommandResult(0, activeInterface?.let { "Network information\n\nIPv4 network interface information\n     $it : flags 0x5\n" }.orEmpty())
+            "-listnetworkserviceorder" -> NativeCommandResult(0, networkServiceOrder)
             "-getwebproxy" -> NativeCommandResult(0, web.output())
             "-getsecurewebproxy" -> NativeCommandResult(0, secure.output())
+            "-getautoproxyurl" -> NativeCommandResult(0, "Enabled: ${if (pacEnabled) "Yes" else "No"}\nURL: ${if (pacEnabled) "http://proxy.example/proxy.pac" else ""}\n")
+            "-getproxyautodiscovery" -> NativeCommandResult(0, "Enabled: ${if (autodiscoveryEnabled) "Yes" else "No"}\n")
+            "-getproxybypassdomains" -> NativeCommandResult(0, bypassDomains.joinToString("\n"))
             "-setwebproxy" -> {
                 web = web.copy(server = command[3], port = command[4])
                 NativeCommandResult(0, "")

@@ -6,19 +6,29 @@ class NativeMacProxyRecovery(
     private val controller: NativeMacSystemProxyController,
     private val leases: NativeMacProxyLeaseStore,
 ) {
-    fun prepareLease(endpoint: String, port: Int): NativeMacProxyLease {
+    fun prepareLease(
+        endpoint: String,
+        port: Int,
+        captureToken: String = "mac_${Clock.System.now().toEpochMilliseconds()}",
+        workerPid: Int? = null,
+    ): NativeMacProxyLease {
         val existing = leases.load()
-        if (existing != null && existing.hasAppliedSettings() && !existing.isFullyRestored()) return existing
+        if (existing != null) return existing
         val snapshot = controller.inspect()
         val installed = NativeMacProxySetting(enabled = true, server = "127.0.0.1", port = port.toString())
         val lease = NativeMacProxyLease(
-            leaseId = "mac_${Clock.System.now().toEpochMilliseconds()}",
+            leaseId = captureToken,
             service = snapshot.service,
             endpoint = endpoint,
             webOriginal = snapshot.web,
             secureOriginal = snapshot.secure,
             webInstalled = installed,
             secureInstalled = installed,
+            workerPid = workerPid,
+            captureToken = captureToken,
+            pacUrl = snapshot.pacUrl,
+            autodiscoveryEnabled = snapshot.autodiscoveryEnabled,
+            bypassDomains = snapshot.bypassDomains,
         )
         leases.save(lease)
         return lease
@@ -68,6 +78,10 @@ class NativeMacProxyRecovery(
                     current = current.copy(secureRestored = true)
                     leases.save(current)
                 }
+                .onFailure { errors += it.message ?: it::class.simpleName.orEmpty() }
+        }
+        if (errors.isEmpty()) {
+            runCatching { controller.verifyAuxiliarySettingsUnchanged(current) }
                 .onFailure { errors += it.message ?: it::class.simpleName.orEmpty() }
         }
         if (errors.isEmpty() && current.isFullyRestored()) {
