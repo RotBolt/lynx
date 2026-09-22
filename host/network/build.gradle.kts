@@ -31,6 +31,17 @@ kotlin {
                     compilerOpts("-I/opt/homebrew/include")
                 }
             }
+            create("lynxZlib") {
+                defFile(project.file("src/nativeInterop/cinterop/lynx-zlib-linux.def"))
+                compilerOpts("-I${project.file("src/nativeInterop/cinterop").absolutePath}")
+            }
+            create("lynxBrotli") {
+                defFile(project.file("src/nativeInterop/cinterop/lynx-brotli-linux.def"))
+                compilerOpts("-I${project.file("src/nativeInterop/cinterop").absolutePath}")
+                if (System.getProperty("os.name").contains("Mac", ignoreCase = true)) {
+                    compilerOpts("-I/opt/homebrew/include")
+                }
+            }
         }
     }
     macosArm64 {
@@ -41,6 +52,14 @@ kotlin {
             }
             create("lynxH2") {
                 defFile(project.file("src/nativeInterop/cinterop/lynx-h2-macos.def"))
+                compilerOpts("-I${project.file("src/nativeInterop/cinterop").absolutePath}")
+            }
+            create("lynxZlib") {
+                defFile(project.file("src/nativeInterop/cinterop/lynx-zlib-macos.def"))
+                compilerOpts("-I${project.file("src/nativeInterop/cinterop").absolutePath}")
+            }
+            create("lynxBrotli") {
+                defFile(project.file("src/nativeInterop/cinterop/lynx-brotli-macos.def"))
                 compilerOpts("-I${project.file("src/nativeInterop/cinterop").absolutePath}")
             }
         }

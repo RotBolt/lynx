@@ -156,10 +156,11 @@ class PosixNativeNetworkInspector(
                     return
                 }
                 val responseBody = readUntilClose(upstream)
-                val responseRaw = responseHead + responseBody
-                sendBytes(client, responseRaw.encodeToByteArray())
+                sendBytes(client, responseHead.encodeToByteArray() + responseBody)
                 val response = responseHeadValue.copy(
-                    body = NativeHttpBodyDecoder.decode(responseHeadValue.headers, responseBody),
+                    body = NativeHttpBodyDecoder.decode(
+                        responseHeadValue.headers.mapValues { it.value.joinToString(", ") }, responseBody,
+                    ).decodeToString(),
                 )
                 store.append(exchange(request, requestId, response, null, started))
             } finally { close(upstream) }
@@ -255,8 +256,10 @@ class PosixNativeNetworkInspector(
                     )
                 } else {
                     val responseBody = upstreamReader.readUntilClose()
-                    downstream.write((responseHead + responseBody).encodeToByteArray())
-                    val capturedBody = NativeHttpBodyDecoder.decode(response.headers, responseBody)
+                    downstream.write(responseHead.encodeToByteArray() + responseBody)
+                    val capturedBody = NativeHttpBodyDecoder.decode(
+                        response.headers.mapValues { it.value.joinToString(", ") }, responseBody,
+                    ).decodeToString()
                     store.append(exchange(observedRequest, requestId, response.copy(body = capturedBody), null, started))
                 }
             } finally {
@@ -387,7 +390,10 @@ class PosixNativeNetworkInspector(
         val url = "$scheme://$authority$path"
         val requestBody = request?.exchange?.body?.takeIf { it.isNotEmpty() }?.decodeToString()
         val status = responseHeaders[":status"]?.toIntOrNull() ?: 0
-        val responseBody = response?.body?.takeIf { it.isNotEmpty() }?.decodeToString()
+        val responseBody = response?.let {
+            NativeHttpBodyDecoder.decode(response.headers, it.body)
+                .takeIf(ByteArray::isNotEmpty)?.decodeToString()
+        }
         val completed = getTimeMillis()
         val id = request?.requestId ?: RequestId("${connectId.value}_${response?.streamId ?: "unknown"}")
         return NetworkExchange(
@@ -432,7 +438,7 @@ class PosixNativeNetworkInspector(
      * beginning of a TLS ClientHello after CONNECT, so this intentionally reads
      * one byte at a time at the protocol boundary. */
     private fun readHeaders(fd: Int): String { val bytes = mutableListOf<Byte>(); while (bytes.size < 1024 * 1024) { memScoped { val native = allocArray<ByteVar>(1); val count = recv(fd, native, 1uL, 0); if (count <= 0) return bytes.toByteArray().decodeToString(); bytes += native[0] }; if (bytes.size >= 4 && bytes.takeLast(4).toByteArray().decodeToString() == "\r\n\r\n") break }; return bytes.toByteArray().decodeToString() }
-    private fun readUntilClose(fd: Int): String { val bytes = mutableListOf<Byte>(); memScoped { val buffer = allocArray<ByteVar>(8192); while (true) { val count = recv(fd, buffer, 8192.convert(), 0); if (count <= 0) break; for (i in 0 until count) bytes += buffer[i] } }; return bytes.toByteArray().decodeToString() }
+    private fun readUntilClose(fd: Int): ByteArray { val bytes = mutableListOf<Byte>(); memScoped { val buffer = allocArray<ByteVar>(8192); while (true) { val count = recv(fd, buffer, 8192.convert(), 0); if (count <= 0) break; for (i in 0 until count) bytes += buffer[i] } }; return bytes.toByteArray() }
     private fun relayPlainWebSocket(client: Int, upstream: Int, request: NativeHttpParser.Request, id: RequestId, response: NativeHttpParser.Response, started: Long) {
         val frames = mutableListOf<NetworkFrame>()
         memScoped {
@@ -540,14 +546,14 @@ internal class NativeTlsBufferedReader(private val connection: NativeTlsConnecti
         return result
     }
 
-    fun readUntilClose(): String {
+    fun readUntilClose(): ByteArray {
         val bytes = buffered.toMutableList()
         buffered = ByteArray(0)
         while (true) {
             val next = connection.read() ?: break
             bytes.addAll(next.toList())
         }
-        return bytes.toByteArray().decodeToString()
+        return bytes.toByteArray()
     }
 
     private fun ByteArray.indexOfSequence(value: ByteArray): Int {

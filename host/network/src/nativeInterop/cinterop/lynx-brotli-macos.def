@@ -1,0 +1,4 @@
+package = dev.lynx.nativehost.brotli
+headers = lynx_brotli.h
+compilerOpts = -I/opt/homebrew/include
+linkerOpts = -L/opt/homebrew/lib -lbrotlidec

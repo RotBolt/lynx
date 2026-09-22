@@ -10,7 +10,7 @@ Lynx now has a Kotlin Multiplatform native CLI target graph:
 | Target | Artifact | Status |
 |---|---|---|
 | macOS ARM64 | `lynx-macos-arm64.tar.gz` | Database inspection, HTTP/1.1, HTTPS MITM, HTTP/2, and plain WebSocket capture available; TLS-WebSocket adapter under construction 🚧 |
-| Linux x64 | `lynx-linux-x64.tar.gz` | Native HTTP/1.1, HTTPS MITM, HTTP/2, and plain WebSocket capture; the archive carries Debian 12-compatible OpenSSL/nghttp2 runtime libraries |
+| Linux x64 | `lynx-linux-x64.tar.gz` | Native HTTP/1.1, HTTPS MITM, HTTP/2, and plain WebSocket capture; the archive carries Debian 12-compatible OpenSSL/nghttp2/Brotli runtime libraries |
 | Windows x64 | — | Common KMP code compiles; native runtime adapters under construction 🚧 |
 
 The network API itself is also a KMP boundary. `host:network` exposes the
@@ -19,8 +19,7 @@ portable command/result contract in `commonMain`; its JVM proxy is isolated in
 proxy. The standalone executable therefore does not load the JVM network
 backend, Netty, or a JVM TLS provider.
 
-Each archive contains the executable named `lynx`, native TLS/HTTP2 runtime libraries,
-and
+Each archive contains the executable named `lynx`, native TLS/HTTP2/Brotli runtime libraries, and
 `lynx-skill/SKILL.md`. Install the executable on `PATH` (for example,
 `$HOME/.local/bin`) and point an agent harness at the bundled skill file.
 Verify the executable with `lynx --version`.
@@ -41,10 +40,11 @@ ANDROID_HOME="$HOME/Library/Android/sdk" \
   ./apps/cli/build/bin/macosArm64/releaseExecutable/lynx.kexe devices
 ```
 
-The Linux release archive carries the OpenSSL 3 and nghttp2 runtime libraries,
-so a release install does not require a JVM or a separate native networking
-installation. Building from source on Linux still requires the corresponding
-development packages (`libssl-dev` and `libnghttp2-dev`).
+The Linux release archive carries the OpenSSL 3, nghttp2, and Brotli runtime
+libraries, so a release install does not require a JVM or a separate native
+networking installation. Building from source on Linux still requires the
+corresponding development packages (`libssl-dev`, `libnghttp2-dev`, and
+`libbrotli-dev`).
 
 After obtaining a Linux binary, run the same executable-level regression used
 by the native workflow:

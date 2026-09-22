@@ -1,23 +1,30 @@
 package dev.lynx.nativehost
 
-/** Removes HTTP/1 chunk transfer framing from captured bodies without changing forwarded bytes. */
+/** Normalizes captured payloads for readable evidence without changing forwarded wire bytes. */
 internal object NativeHttpBodyDecoder {
-    fun decode(headers: Map<String, List<String>>, body: String): String {
-        val transferEncoding = headers.entries
-            .firstOrNull { (name, _) -> name.equals("Transfer-Encoding", ignoreCase = true) }
-            ?.value
-            .orEmpty()
-            .flatMap { it.split(',') }
-            .map(String::trim)
-        if (transferEncoding.none { it.equals("chunked", ignoreCase = true) }) return body
+    fun decode(headers: Map<String, String>, body: ByteArray): ByteArray {
+        val transferEncoding = headers.value("Transfer-Encoding")
+            ?.split(',')?.map(String::trim).orEmpty()
+        var decoded = if (transferEncoding.any { it.equals("chunked", ignoreCase = true) }) {
+            decodeChunked(body) ?: body
+        } else {
+            body
+        }
 
-        return decodeChunked(body) ?: body
+        val contentEncoding = headers.value("Content-Encoding")
+            ?.split(',')?.map(String::trim).orEmpty()
+        for (encoding in contentEncoding.asReversed()) {
+            decoded = when {
+                encoding.equals("gzip", ignoreCase = true) -> NativeGzipDecoder.decode(decoded) ?: decoded
+                encoding.equals("br", ignoreCase = true) -> NativeBrotliDecoder.decode(decoded) ?: decoded
+                else -> decoded
+            }
+        }
+        return decoded
     }
 
-    private fun decodeChunked(body: String): String? {
-        val bytes = body.encodeToByteArray()
-        val decoded = ByteArray(bytes.size)
-        var decodedSize = 0
+    private fun decodeChunked(bytes: ByteArray): ByteArray? {
+        val decoded = mutableListOf<Byte>()
         var cursor = 0
 
         while (true) {
@@ -31,7 +38,7 @@ internal object NativeHttpBodyDecoder {
                 while (true) {
                     val trailerEnd = bytes.indexOfCrlf(cursor)
                     if (trailerEnd < 0) return null
-                    if (trailerEnd == cursor) return decoded.copyOf(decodedSize).decodeToString()
+                    if (trailerEnd == cursor) return decoded.toByteArray()
                     cursor = trailerEnd + CRLF_SIZE
                 }
             }
@@ -41,8 +48,7 @@ internal object NativeHttpBodyDecoder {
             if (payloadSize > bytes.size - cursor - CRLF_SIZE) return null
             val chunkEnd = cursor + payloadSize
             if (bytes[chunkEnd] != CR || bytes[chunkEnd + 1] != LF) return null
-            bytes.copyInto(decoded, decodedSize, cursor, chunkEnd)
-            decodedSize += payloadSize
+            for (index in cursor until chunkEnd) decoded += bytes[index]
             cursor = chunkEnd + CRLF_SIZE
         }
     }
@@ -53,6 +59,9 @@ internal object NativeHttpBodyDecoder {
         }
         return -1
     }
+
+    private fun Map<String, String>.value(name: String): String? =
+        entries.firstOrNull { it.key.equals(name, ignoreCase = true) }?.value
 
     private const val CRLF_SIZE = 2
     private val CR = '\r'.code.toByte()

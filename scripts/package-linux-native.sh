@@ -13,9 +13,9 @@ cp "$BIN" "$DIST/lynx"
 
 RUNTIME_DIR=${LYNX_LINUX_RUNTIME_LIB_DIR:-}
 if [ -n "$RUNTIME_DIR" ]; then
-  for library in libssl.so.3 libcrypto.so.3 libnghttp2.so.14; do
+  for library in libssl.so.3 libcrypto.so.3 libnghttp2.so.14 libbrotlidec.so.1 libbrotlicommon.so.1; do
     test -f "$RUNTIME_DIR/$library"
-    cp "$RUNTIME_DIR/$library" "$DIST/$library"
+    cp -L "$RUNTIME_DIR/$library" "$DIST/$library"
   done
 else
   command -v curl >/dev/null
@@ -24,16 +24,20 @@ else
     https://deb.debian.org/debian/pool/main/o/openssl/libssl3_3.0.17-1~deb12u2_amd64.deb
   curl -fsSL -o "$ROOT/libnghttp2.deb" \
     https://deb.debian.org/debian/pool/main/n/nghttp2/libnghttp2-14_1.52.0-1+deb12u3_amd64.deb
+  curl -fsSL -o "$ROOT/libbrotli1.deb" \
+    https://deb.debian.org/debian/pool/main/b/brotli/libbrotli1_1.0.9-2+b6_amd64.deb
   dpkg-deb -x "$ROOT/libssl3.deb" "$ROOT/runtime"
   dpkg-deb -x "$ROOT/libnghttp2.deb" "$ROOT/runtime"
-  for library in libssl.so.3 libcrypto.so.3 libnghttp2.so.14; do
+  dpkg-deb -x "$ROOT/libbrotli1.deb" "$ROOT/runtime"
+  for library in libssl.so.3 libcrypto.so.3 libnghttp2.so.14 libbrotlidec.so.1 libbrotlicommon.so.1; do
     cp "$ROOT/runtime/usr/lib/x86_64-linux-gnu/$library" "$DIST/$library"
   done
 fi
 
 command -v patchelf >/dev/null
 patchelf --set-rpath '$ORIGIN' "$DIST/lynx"
+patchelf --set-rpath '$ORIGIN' "$DIST/libbrotlidec.so.1"
 cp docs/agent-skill/SKILL.md "$DIST/lynx-skill/SKILL.md"
 mkdir -p "$(dirname "$ARCHIVE")"
 tar -czf "$ARCHIVE" -C "$DIST" \
-  lynx libssl.so.3 libcrypto.so.3 libnghttp2.so.14 lynx-skill
+  lynx libssl.so.3 libcrypto.so.3 libnghttp2.so.14 libbrotlidec.so.1 libbrotlicommon.so.1 lynx-skill

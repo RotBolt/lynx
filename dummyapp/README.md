@@ -42,7 +42,8 @@ xcrun simctl terminate "$UDID" dev.lynx.dummyapp || true
 xcrun simctl launch "$UDID" dev.lynx.dummyapp
 sleep 10
 $LYNX network list --json
-$LYNX db list --json
+$LYNX db list --platform ios --simulator "$UDID" \
+  --bundle-id dev.lynx.dummyapp --json
 $LYNX db snapshot Documents/dummyapp.db --json
 $LYNX db tables --snapshot <snapshot-id> --json
 $LYNX db query --snapshot <snapshot-id> \
