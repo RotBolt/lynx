@@ -11,6 +11,22 @@ import kotlin.test.assertNull
 
 class NativeSessionManagerTest {
     @Test
+    fun attachesToIosSimulatorUsingSimctlLaunchPid() {
+        val store = InMemoryNativeSessionStore()
+        val udid = "25CD22C1-E1F2-417F-87BA-09D7600F3B93"
+        val runner = RecordingRunner(listOf("dev.lynx.dummyapp: 12345\n"))
+        val manager = NativeSessionManager(runner, store) { "session_ios" }
+
+        val attached = manager.attach("ios-simulator:$udid", "dev.lynx.dummyapp")
+
+        assertContains(attached, "device=ios-simulator:$udid package=dev.lynx.dummyapp pid=12345")
+        assertEquals(
+            listOf("xcrun", "simctl", "launch", udid, "dev.lynx.dummyapp"),
+            runner.commands.single(),
+        )
+    }
+
+    @Test
     fun attachPersistsMetadataAndRebindsPidDuringStatus() {
         val store = InMemoryNativeSessionStore()
         val runner = RecordingRunner(listOf("4321\n", "8765\n"))

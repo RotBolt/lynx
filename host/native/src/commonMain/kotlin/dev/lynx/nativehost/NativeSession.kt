@@ -49,6 +49,15 @@ class NativeSessionManager(
     fun session(): NativeSession? = store.load()
 
     private fun pid(deviceSerial: String, packageName: String): Int {
+        if (deviceSerial.startsWith("ios-simulator:")) {
+            val udid = deviceSerial.removePrefix("ios-simulator:")
+            require(udid.isNotBlank()) { "iOS Simulator UDID is required" }
+            val result = runner.run(listOf("xcrun", "simctl", "launch", udid, packageName))
+            require(result.exitCode == 0) { result.stderr.ifBlank { result.stdout.ifBlank { "unable to launch $packageName on simulator $udid" } } }
+            return result.stdout.trim().substringAfterLast(':').trim().toIntOrNull()
+                ?: error("simctl did not return a process ID for $packageName on simulator $udid")
+        }
+
         val result = runner.run(listOf("adb", "-s", deviceSerial, "shell", "pidof", packageName))
         require(result.exitCode == 0) { result.stderr.ifBlank { "unable to resolve process for $packageName" } }
         return result.stdout.trim().split(Regex("\\s+")).firstOrNull()?.toIntOrNull()

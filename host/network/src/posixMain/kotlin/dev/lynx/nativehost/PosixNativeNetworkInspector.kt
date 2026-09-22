@@ -14,6 +14,7 @@ class PosixNativeNetworkInspector(
     private val certificates: PosixNativeCertificateAuthority = PosixNativeCertificateAuthority(processes),
 ) : NativeNetworkInspector {
     private val androidProxy = NativeAndroidProxyController(processes)
+    private val macProxy = NativeMacSystemProxyController(processes)
     private val clientDispatcher = PosixNativeConnectionDispatcher()
 
     override fun execute(command: NetworkCommand): NetworkCommandResult = when (command) {
@@ -49,20 +50,31 @@ class PosixNativeNetworkInspector(
             ?: nativeExecutablePath()
             ?: "lynx"
         PosixProcessRunner().run(listOf("sh", "-c", "(nohup '$executable' network worker $port >/dev/null 2>&1 </dev/null &)"))
-        repeat(40) {
-            if (store.workerReady()) {
-                val running = caps.copy(proxyStatus = "running")
-                store.setRunning(endpoint, running, previousProxy)
-                return NetworkCommandResult.Started(endpoint, running)
+        try {
+            repeat(40) {
+                if (store.workerReady()) {
+                    val running = caps.copy(proxyStatus = "running")
+                    store.setRunning(endpoint, running, previousProxy)
+                    return NetworkCommandResult.Started(endpoint, running)
+                }
+                usleep(50_000u)
             }
-            usleep(50_000u)
+            throw IllegalStateException("native network worker did not become ready; install lynx on PATH or set LYNX_EXECUTABLE")
+        } catch (error: Throwable) {
+            runCatching { restoreProxy(previousProxy) }
+            store.clearRunning()
+            throw error
         }
-        store.clearRunning()
-        throw IllegalStateException("native network worker did not become ready; install lynx on PATH or set LYNX_EXECUTABLE")
     }
 
     private fun applyDeviceProxy(port: Int, listenHost: String): Map<String, String?>? {
         val session = sessions.load() ?: return null
+        if (session.deviceSerial.startsWith("ios-simulator:")) {
+            require(listenHost == "0.0.0.0" || listenHost == "127.0.0.1") {
+                "iOS Simulator capture requires the native proxy to listen on the host"
+            }
+            return macProxy.apply(port)
+        }
         val visibleHost = when {
             session.deviceSerial.startsWith("emulator-") -> "10.0.2.2"
             listenHost != "0.0.0.0" -> listenHost
@@ -72,8 +84,21 @@ class PosixNativeNetworkInspector(
     }
 
     private fun restoreDeviceProxy() {
+        val previous = store.previousProxy()
+        if (previous?.get("controller") == "macos") {
+            macProxy.restore(previous)
+            return
+        }
         val session = sessions.load() ?: return
-        androidProxy.restore(session.deviceSerial, store.previousProxy())
+        androidProxy.restore(session.deviceSerial, previous)
+    }
+
+    private fun restoreProxy(previous: Map<String, String?>?) {
+        if (previous?.get("controller") == "macos") {
+            macProxy.restore(previous)
+        } else {
+            sessions.load()?.let { androidProxy.restore(it.deviceSerial, previous) }
+        }
     }
 
     /** Worker entrypoint. It accepts cleartext HTTP proxy requests and appends complete exchanges. */
