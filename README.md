@@ -54,7 +54,8 @@ or copy it into the harness's skill directory; it explains the attach,
 database, JSON, and network-evidence workflow without assuming a particular
 editor or model.
 
-Linux x64 users can substitute `lynx-linux-x64.tar.gz` in the download URL.
+Linux x64 packaging is available for maintainer/runtime smoke work, but remains
+unverified and unpublished for app-scoped device capture 🚧.
 Lynx discovers Android SDK platform-tools from SDK configuration, standard
 locations, or `PATH`; use `lynx doctor --json` for exact diagnostics.
 
