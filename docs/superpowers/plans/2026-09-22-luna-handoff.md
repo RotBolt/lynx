@@ -1,6 +1,7 @@
 # Luna implementation handoff
 
-Status: planning only. No runtime fix is claimed by these documents.
+Status: M1.1-10 implementation and committed-archive verification complete;
+checkpoint tag follows the final ledger/docs commit.
 
 Read the [master plan](2026-09-22-native-inspection-hardening.md) and
 [contract](../specs/2026-09-22-app-scoped-native-inspection.md), then the component

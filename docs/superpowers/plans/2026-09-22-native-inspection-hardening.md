@@ -86,7 +86,7 @@ describe the JVM backend and must not be treated as proof of native parity.
 | M1.1-08 | Production Android relay, host transport, ownership resolver, cleanup and ABI packaging. | V6 Android + V0 both | `feat(network): verify Android socket owners` / `checkpoint/m1-1/08-android-scope` |
 | M1.1-WS | Publish open WebSocket handshake/data/control frames incrementally; no close required. | Live reads before close + V0 + V6 | `fix(network): publish live websocket frames` / `checkpoint/m1-1/WS-live-frames` |
 | M1.1-09 | Native CLI session catalog/snapshot/scoped list/get; update consumers atomically. | V7 + V0 + V6 both | `feat(cli)!: scope network inspection sessions` / `checkpoint/m1-1/09-scoped-cli` |
-| M1.1-10 | Extracted distribution, bundled agent instructions, complete regression report. | V8 | `build: verify scoped native distribution` / `checkpoint/m1-1/10-macos-release-ready` |
+| M1.1-10 | Extracted distribution, bundled agent instructions, complete regression report. | V8 | `339a616` / `checkpoint/m1-1/10-macos-release-ready` |
 
 Execution is sequential. Inactive adapter code may be added behind internal test
 entrypoints before cutover, while existing protocol checks still pass. Do not

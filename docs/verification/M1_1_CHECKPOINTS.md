@@ -15,6 +15,7 @@ certificates and traffic remain under ignored `build/verification/` directories.
 | M1.1-07 | `8ed413c` / `checkpoint/m1-1/07-ios-scope` | pass: legacy Android regression | pass: scoped iOS H1/H2/WSS and foreign pass-through | source/snapshot rows matched on both platforms | pass | pass | pass | Android proxy `:0`; macOS web and secure-web proxies restored | pass; Android ownership remains M1.1-08 |
 | M1.1-08 / WS | `08eb040` | pass: relay transport and live WSS frames | pass: relay-independent iOS scope | source/snapshot rows matched on both platforms | pass | pass | pass | Android proxy `:0`, no reverse mappings; macOS lease restored | pass; manual Android live WSS evidence |
 | M1.1-09 | `922b10a` / `checkpoint/m1-1/09-scoped-cli` | pass: session-scoped H1/H2/WSS (manual live relay evidence) | pass: committed-tree session-scoped H1/H2/WSS | source/snapshot rows matched on both platforms | pass | pass | pass | Android proxy `:0`, no reverse mappings; macOS lease restored | pass; v2 CLI cutover and repository wiring verified |
+| M1.1-10 | `339a616` / `checkpoint/m1-1/10-macos-release-ready` | pass: extracted archive H1/H2/WSS + DB | pass: extracted archive H1/H2/WSS + DB | Android 9,413 rows; iOS 249 rows | pass | pass | pass | Android proxy `:0`, no reverse mappings; simulator proxy restored | pass; macOS archive verified outside repo |
 
 Use `pass`, `fail`, `blocked`, or `not_run`; never replace a missing live row
 with an old result or a local fixture.
@@ -37,6 +38,27 @@ with an old result or a local fixture.
   and no reverse mappings. A later Android harness retry was blocked by the
   currently installed `dev.lynx.dummyapp` trust state, not by CLI/session
   assertions; existing manual relay evidence remains the network proof.
+
+## M1.1-10 committed archive evidence
+
+- Commit `339a616` passed the full native/JVM/macOS release-link gate. Fresh
+  relay helpers rebuilt with NDK `30.0.16248370`.
+- Archive:
+  `build/verification/m1-1/10/lynx-macos-arm64-committed.tar.gz`
+  SHA-256: `b319a948a5a700915409d172365b2d25d6ee7c83207dcf289ac5f6d0d0ed223d`.
+- Archive extracted under `/tmp`, then invoked from `/tmp`; `lynx --version`,
+  `doctor --json`, `devices --json`, manifest verification, and bundled relay
+  auto-discovery passed with `LYNX_ANDROID_RELAY_BINARY` unset.
+- Committed archive Android smoke: real sample-app HTTP/1.1 200, HTTP/2 200,
+  and WebSocket 101 with echoed ping and verified attribution. One WSS attempt
+  timed out at the public endpoint; immediate retry passed.
+- Committed archive iOS Simulator smoke: real sample-app HTTP/1.1 200, HTTP/2
+  200, and WebSocket 101 with echoed ping and verified attribution.
+- Committed archive database parity: Android `databases/dummyapp.db` source vs
+  snapshot matched at 9,413 rows; iOS `Documents/dummyapp.db` matched at 249
+  rows; tables and read-only query checks passed.
+- Package verifier rejected mutated archives for missing skill, relay hash, and
+  relay protocol. Android finished at proxy `:0` with no reverse mappings.
 
 ## M1.1-01 pre-commit evidence
 
