@@ -35,8 +35,9 @@
 
 ## Status
 
-Implemented and verified in the isolated worktree. Commit `2ce7db1` preserves
-the Android relay fix; the iOS routing fix is carried by `0a72a98`.
+Implemented and verified in the isolated worktree. Android relay fix is in
+`2ce7db1`; iOS cleanup is in `0a72a98`; exact iOS socket attribution is in the
+follow-up commit for this report.
 
 Fresh iOS Simulator evidence (`capture_mudvgbnm`) showed HTTP/1.1 `200`,
 HTTP/2 `304`, and WebSocket `101` with `lynx-sample-ping` frames in
@@ -45,5 +46,5 @@ HTTP/2 `304`, and WebSocket `101` with `lynx-sample-ping` frames in
 error occurred. Android DB parity remained green (9,483 rows); iOS DB parity
 remained green (274 rows).
 
-Unrelated host-proxy events can still appear in an unscoped iOS snapshot; app
-identity filtering is tracked separately by the app-scoped inspection plan.
+The follow-up exact-tuple resolver check also excludes unrelated host-proxy
+connections from the attached-app snapshot.

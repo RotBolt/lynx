@@ -28,8 +28,19 @@ class MacosConnectionOwnerResolver(
             ?: return OwnershipDecision.Other
         val startIdentity = lynx_proc_start_identity(processId).takeIf { it != 0uL }
             ?: return OwnershipDecision.Unknown("cannot inspect simulator process identity")
-        val addresses = listOf(socket.localAddress, "127.0.0.1", "::1").distinct()
-        val results = addresses.map { address -> lynx_proc_socket_owner(processId, address, socket.localPort.toUShort()) }
+        val localAddresses = listOf(socket.peerAddress, "127.0.0.1", "::1").distinct()
+        val remoteAddresses = listOf(socket.localAddress, "127.0.0.1", "::1").distinct()
+        val results = localAddresses.flatMap { local ->
+            remoteAddresses.map { remote ->
+                lynx_proc_socket_owner(
+                    processId,
+                    local,
+                    socket.peerPort.toUShort(),
+                    remote,
+                    socket.localPort.toUShort(),
+                )
+            }
+        }
         val ownership = when {
             results.any { it == 1 } -> 1
             results.any { it < 0 } -> -1
