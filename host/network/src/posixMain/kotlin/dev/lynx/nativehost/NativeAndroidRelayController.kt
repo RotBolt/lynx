@@ -25,7 +25,8 @@ class NativeAndroidRelayController(private val processes: NativeProcessRunner) {
         val remoteCommand = "chmod 700 '$remotePath' && setsid nohup '$remotePath' --package '${packageName.replace("'", "")}' --pid $pid --listen-port $relayPort --upstream-host 127.0.0.1 --upstream-port $hostPort --capture-id '${captureId.replace("'", "")}' --device '${deviceSerial.replace("'", "")}' --token '$captureToken' > '$remotePath.ready' 2>&1 < /dev/null & echo \$!"
         // adb shell keeps its transport attached to a background child on some emulator
         // images. Detach the host-side adb invocation too; readiness is checked separately.
-        val launch = processes.run(listOf("sh", "-c", "adb -s '${deviceSerial.replace("'", "")}' shell ${quote(remoteCommand)} >/dev/null 2>&1 & echo \$!"))
+        val adb = quote(adbExecutable())
+        val launch = processes.run(listOf("sh", "-c", "$adb -s '${deviceSerial.replace("'", "")}' shell ${quote(remoteCommand)} >/dev/null 2>&1 & echo \$!"))
         require(launch.exitCode == 0) { launch.stderr.ifBlank { "ANDROID_RELAY_START_FAILED" } }
         val relayPid = launch.stdout.trim().lineSequence().lastOrNull { it.trim().toIntOrNull() != null }?.trim()
             ?: error("ANDROID_RELAY_PID_UNAVAILABLE")
@@ -71,4 +72,6 @@ class NativeAndroidRelayController(private val processes: NativeProcessRunner) {
             .map { "$root/android-relay/$it/lynx-android-relay" }
             .firstOrNull { processes.run(listOf("test", "-x", it)).exitCode == 0 }
     }
+
+    private fun adbExecutable(): String = PosixHostToolResolver().resolve(HostTool.ADB).path ?: "adb"
 }
