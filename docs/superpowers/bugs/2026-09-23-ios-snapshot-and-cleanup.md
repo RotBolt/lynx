@@ -35,6 +35,15 @@
 
 ## Status
 
-The ADB-routing cleanup fix is implemented in the isolated worktree with a
-regression test. Live iOS snapshot verification remains a required gate before
-the ticket is checkpointed.
+Implemented and verified in the isolated worktree. Commit `2ce7db1` preserves
+the Android relay fix; the iOS routing fix is carried by `0a72a98`.
+
+Fresh iOS Simulator evidence (`capture_mudvgbnm`) showed HTTP/1.1 `200`,
+HTTP/2 `304`, and WebSocket `101` with `lynx-sample-ping` frames in
+`network snapshot --json` before WebSocket close. `network stop --json` returned
+`network_stopped`; `detach --json` returned `OK DETACHED`. No ADB unknown-host
+error occurred. Android DB parity remained green (9,483 rows); iOS DB parity
+remained green (274 rows).
+
+Unrelated host-proxy events can still appear in an unscoped iOS snapshot; app
+identity filtering is tracked separately by the app-scoped inspection plan.
