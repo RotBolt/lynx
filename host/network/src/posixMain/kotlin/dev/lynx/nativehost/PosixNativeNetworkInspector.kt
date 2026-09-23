@@ -201,9 +201,11 @@ class PosixNativeNetworkInspector(
         try {
             // Launch the same native executable as a detached worker. Installers put `lynx` on PATH;
             // tests and embedders can provide LYNX_EXECUTABLE explicitly.
-            val executable = getenv("LYNX_EXECUTABLE")?.toKString()?.takeIf(String::isNotBlank)
-            ?: nativeExecutablePath()
-            ?: "lynx"
+            val executable = resolveWorkerExecutable(
+                getenv("LYNX_EXECUTABLE")?.toKString()?.takeIf(String::isNotBlank)
+                    ?: nativeExecutablePath()
+                    ?: "lynx",
+            )
             val launch = processes.run(listOf("sh", "-c", "LYNX_CAPTURE_TOKEN='$captureToken' LYNX_CAPTURE_ID='${captureId.orEmpty()}' LYNX_CAPTURE_ENDPOINT='$endpoint' nohup '$executable' network worker $port >/dev/null 2>&1 </dev/null & echo \$!"))
             val workerPid = launch.stdout.trim().toIntOrNull()
             ?: error("native network worker did not report a process ID")
@@ -250,6 +252,17 @@ class PosixNativeNetworkInspector(
         deviceId = session.deviceSerial.removePrefix("ios-simulator:"),
         applicationId = session.packageName,
     )
+
+    /** Detached workers run from a non-interactive shell. Resolve a PATH-only
+     * argv[0] to an absolute executable before that shell exits; otherwise the
+     * worker can appear ready during startup and then disappear when its shell
+     * no longer has the caller's interactive PATH. */
+    private fun resolveWorkerExecutable(candidate: String): String {
+        if (candidate.contains('/')) return candidate
+        val escaped = candidate.replace("'", "'\\''")
+        val resolved = processes.run(listOf("sh", "-c", "command -v '$escaped'")).stdout.trim()
+        return resolved.ifBlank { candidate }
+    }
 
     private fun applyDeviceProxy(port: Int, listenHost: String, captureToken: String): Map<String, String?>? {
         val session = sessions.load() ?: return null
