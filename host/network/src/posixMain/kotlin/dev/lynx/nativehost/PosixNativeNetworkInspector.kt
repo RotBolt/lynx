@@ -863,8 +863,23 @@ class PosixNativeNetworkInspector(
      * one byte at a time at the protocol boundary. */
     private fun readRelayPreface(fd: Int, seen: (AndroidRelayPreface) -> Unit): ByteArray {
         val prefix = ByteArray(4)
-        val peeked = prefix.usePinned { recv(fd, it.addressOf(0), 4uL, MSG_PEEK) }
-        if (peeked < 4) return ByteArray(0)
+        // Relay metadata starts with a four-byte length. TCP may deliver that
+        // prefix fragmented; a single MSG_PEEK can therefore see 1-3 bytes and
+        // incorrectly classify a verified relay connection as direct HTTP.
+        // Wait briefly for the complete prefix while leaving bytes unread.
+        var peeked = 0L
+        var complete = false
+        repeat(1_000) {
+            if (complete) return@repeat
+            peeked = prefix.usePinned { recv(fd, it.addressOf(0), 4uL, MSG_PEEK) }
+            if (peeked >= 4L) {
+                complete = true
+                return@repeat
+            }
+            if (peeked < 0L) return ByteArray(0)
+            usleep(1_000u)
+        }
+        if (!complete) return ByteArray(0)
         val length = ((prefix[0].toInt() and 0xff) shl 24) or ((prefix[1].toInt() and 0xff) shl 16) or
             ((prefix[2].toInt() and 0xff) shl 8) or (prefix[3].toInt() and 0xff)
         if (length !in 1..64 * 1024) return ByteArray(0)
