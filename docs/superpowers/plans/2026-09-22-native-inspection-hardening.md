@@ -105,6 +105,23 @@ Read these component plans in dependency order:
 3. [Session state, lifecycle, TLS, attribution and CLI cutover](2026-09-22-app-scoped-network-capture.md): M1.1-04 through 09.
 4. [Cross-target cleanup regression](../bugs/2026-09-23-cross-target-capture-cleanup.md): M1.1-09a.
 
+### Added regression reports (2026-09-23)
+
+The latest iOS reports are explicitly part of M1.1-09b, not separate unscoped
+work:
+
+- `network snapshot --json` returned `schema_version: lynx.v2`,
+  `through_sequence: 0`, and `exchanges: []` while the attached sample app was
+  producing traffic. The fix must prove a non-empty, target-attributed snapshot;
+  an empty no-traffic result remains valid and must be tested separately.
+- `network stop --json` routed the simulator UDID through Android cleanup and
+  failed with `adb: unknown host service '<UDID>:features'`.
+- `detach --json` surfaced the same failure through its stop-before-detach path.
+
+The acceptance gate is iOS host-proxy cleanup only: no ADB or Android-relay
+invocation, idempotent stop/detach, restored proxy state, and no regression in
+Android cleanup or read-only database commands.
+
 ## Checkpoint procedure
 
 For every runtime work item, in order:

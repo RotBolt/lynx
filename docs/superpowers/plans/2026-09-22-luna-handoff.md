@@ -29,6 +29,23 @@ working tree before editing. Do not overwrite unrelated changes.
 Do not fold P0 into M1.1-05 or mark it complete from unit tests alone. Ticket 05
 later extends the same recovery mechanism for capture lifecycle needs.
 
+## Added iOS regression scope — M1.1-09b
+
+The current goal includes these reported failures:
+
+1. `lynx network snapshot --json` returned `schema_version: lynx.v2` with
+   `through_sequence: 0` and `exchanges: []` during sample-app traffic.
+2. `lynx network stop --json` attempted Android cleanup and failed with
+   `adb: unknown host service '<simulator-UDID>:features'`.
+3. `lynx detach --json` surfaced the same error through its stop-before-detach
+   path.
+
+Treat these as one cross-target lifecycle ticket. Do not add a second cleanup
+implementation. Before checkpointing, prove a non-empty target-attributed iOS
+snapshot, preserve the valid no-traffic empty case, make stop/detach idempotent,
+restore the host proxy, and make zero ADB calls. Repeat Android stop/detach and
+database checks as regressions.
+
 ## Execution order
 
 1. M1.1-00 read-only inventory: preserve binary/libraries, hashes, current proxy
