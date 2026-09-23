@@ -15,6 +15,7 @@ class PosixNativeNetworkInspector(
     private val captureRepository: CaptureRepository = PosixCaptureRepository(),
 ) : NativeNetworkInspector {
     private val androidProxy = NativeAndroidProxyController(processes)
+    private val androidRelay = NativeAndroidRelayController(processes)
     private val macProxy = NativeMacSystemProxyController(processes, service = null)
     private val macRecovery = NativeMacProxyRecovery(macProxy, store)
     private val ownerResolver = nativeConnectionOwnerResolver()
@@ -109,7 +110,7 @@ class PosixNativeNetworkInspector(
                     }
                     val activePreviousProxy = preparedMacLease?.let {
                         macRecovery.activatePreparedLease(it.copy(supervisorPid = supervisorPid)).previousProxyMap()
-                    } ?: applyDeviceProxy(port, settings.listenHost)
+                    } ?: applyDeviceProxy(port, settings.listenHost, captureToken)
                     val running = caps.copy(proxyStatus = "running")
                     store.setRunning(endpoint, running, activePreviousProxy, workerPid, workerStartIdentity, supervisorPid, captureToken, captureId)
                     return NetworkCommandResult.Started(endpoint, running)
@@ -127,13 +128,22 @@ class PosixNativeNetworkInspector(
         }
     }
 
-    private fun applyDeviceProxy(port: Int, listenHost: String): Map<String, String?>? {
+    private fun applyDeviceProxy(port: Int, listenHost: String, captureToken: String): Map<String, String?>? {
         val session = sessions.load() ?: return null
         if (session.deviceSerial.startsWith("ios-simulator:")) {
             require(listenHost == "0.0.0.0" || listenHost == "127.0.0.1") {
                 "iOS Simulator capture requires the native proxy to listen on the host"
             }
             return macProxy.apply(port)
+        }
+        if (androidRelay.available()) {
+            val relay = androidRelay.start(session.deviceSerial, session.packageName, session.processId, port, captureToken)
+            val previous = androidProxy.apply(session.deviceSerial, "127.0.0.1", relay.relayPort).toMutableMap()
+            previous["controller"] = "android-relay"
+            previous["relayPath"] = relay.remotePath
+            previous["relayPid"] = relay.relayPid
+            previous["relayPort"] = relay.relayPort.toString()
+            return previous
         }
         val visibleHost = when {
             session.deviceSerial.startsWith("emulator-") -> "10.0.2.2"
@@ -155,6 +165,14 @@ class PosixNativeNetworkInspector(
             return
         }
         val session = sessions.load() ?: return
+        if (previous?.get("controller") == "android-relay") {
+            val relay = NativeAndroidRelayController.Lease(
+                remotePath = previous["relayPath"] ?: return,
+                relayPid = previous["relayPid"] ?: return,
+                relayPort = previous["relayPort"]?.toIntOrNull() ?: return,
+            )
+            androidRelay.stop(session.deviceSerial, relay)
+        }
         androidProxy.restore(session.deviceSerial, previous)
     }
 
