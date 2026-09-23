@@ -1,6 +1,6 @@
 # Bug: iOS capture commands reuse an Android capture target
 
-**Status:** Fixed in isolated worktree; pending checkpoint commit.
+**Status:** Fixed in checkpoint `4d77d95` (`checkpoint/m1-1/09a-cross-target-cleanup`).
 
 **Severity:** High — iOS snapshot returned stale/empty Android data and stop/detach
 attempted to call ADB with an iOS simulator UDID.
