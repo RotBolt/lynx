@@ -48,6 +48,17 @@ data class NetworkCapabilities(
     val caTrustStatus: String? = null,
 )
 
+@Serializable
+data class NetworkAttribution(
+    val status: String,
+    val method: String? = null,
+    val deviceId: String? = null,
+    val applicationId: String? = null,
+    val processId: Int? = null,
+    val processStartIdentity: String? = null,
+    val uid: Int? = null,
+)
+
 @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 @Serializable
 @JsonClassDiscriminator("command")
@@ -63,6 +74,18 @@ sealed interface NetworkCommand {
     @Serializable
     @SerialName("list")
     data class List(val filter: NetworkFilter = NetworkFilter()) : NetworkCommand
+
+    @Serializable
+    @SerialName("snapshot")
+    data object Snapshot : NetworkCommand
+
+    @Serializable
+    @SerialName("sessions")
+    data object Sessions : NetworkCommand
+
+    @Serializable
+    @SerialName("session_list")
+    data class SessionList(val sessionId: String, val filter: NetworkFilter = NetworkFilter()) : NetworkCommand
 
     @Serializable
     @SerialName("get")
@@ -82,6 +105,13 @@ sealed interface NetworkCommandResult {
     data class Started(
         val endpoint: String,
         val capabilities: NetworkCapabilities,
+        @SerialName("session_id")
+        val sessionId: String? = null,
+        @SerialName("attachment_id")
+        val attachmentId: String? = null,
+        val target: CaptureTarget? = null,
+        @SerialName("already_running")
+        val alreadyRunning: Boolean = false,
     ) : NetworkCommandResult
 
     @Serializable
@@ -89,8 +119,53 @@ sealed interface NetworkCommandResult {
     data object Stopped : NetworkCommandResult
 
     @Serializable
-    @SerialName("network_list")
+    @SerialName("network_exchanges_legacy")
     data class Exchanges(val exchanges: List<NetworkExchange>) : NetworkCommandResult
+
+    @Serializable
+    @SerialName("network_list")
+    data class ScopedExchanges(
+        @SerialName("session_id")
+        val sessionId: String,
+        @SerialName("through_sequence")
+        val throughSequence: Long,
+        val exchanges: List<NetworkExchange>,
+        @SerialName("in_flight_count")
+        val inFlightCount: Int = 0,
+    ) : NetworkCommandResult
+
+    @Serializable
+    @SerialName("network_snapshot")
+    data class Snapshot(
+        @SerialName("session_id")
+        val sessionId: String,
+        @SerialName("through_sequence")
+        val throughSequence: Long,
+        val exchanges: List<NetworkExchange>,
+        @SerialName("in_flight_count")
+        val inFlightCount: Int = 0,
+    ) : NetworkCommandResult
+
+    @Serializable
+    @SerialName("network_sessions")
+    data class Sessions(val sessions: List<NetworkSessionSummary>) : NetworkCommandResult
+
+    @Serializable
+    data class NetworkSessionSummary(
+        @SerialName("session_id")
+        val sessionId: String,
+        @SerialName("attachment_id")
+        val attachmentId: String,
+        val target: CaptureTarget,
+        val state: CaptureState,
+        val startedAtEpochMillis: Long,
+        @SerialName("exchange_count")
+        val exchangeCount: Int,
+        @SerialName("failure_count")
+        val failureCount: Int,
+        @SerialName("in_flight_count")
+        val inFlightCount: Int = 0,
+    )
 
     @Serializable
     @SerialName("network_get")

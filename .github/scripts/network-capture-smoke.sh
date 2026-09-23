@@ -55,7 +55,11 @@ echo "$START_RESULT" | jq -e '.type == "network_started"' >/dev/null || {
   echo "Lynx did not start capture: $START_RESULT" >&2
   exit 1
 }
+CAPTURE_ID="$(echo "$START_RESULT" | jq -er '.session_id')"
 CAPTURE_STARTED=1
+
+"$LYNX" network snapshot --json | jq -e --arg sid "$CAPTURE_ID" \
+  '.type == "network_snapshot" and .session_id == $sid and .schema_version == "lynx.v2"' >/dev/null
 
 if [[ "$PLATFORM" == android ]]; then
   adb -s "$TARGET" shell am force-stop "$APP_ID"
@@ -101,7 +105,7 @@ for node in root.iter("node"):
 }
 
 latest_request_id() {
-  "$LYNX" network list --url "$1" --json | jq -r '.exchanges[-1].requestId // ""'
+  "$LYNX" network list --session "$CAPTURE_ID" --url "$1" --json | jq -r '.exchanges[-1].requestId // ""'
 }
 
 assert_capture() {
@@ -109,7 +113,7 @@ assert_capture() {
   local event="" request_id="" attempt
 
   for attempt in {1..30}; do
-    event="$("$LYNX" network list --url "$url_fragment" --limit 1 --json | jq -c '.exchanges[-1] // empty')"
+    event="$("$LYNX" network list --session "$CAPTURE_ID" --url "$url_fragment" --limit 1 --json | jq -c '.exchanges[-1] // empty')"
     request_id="$(jq -r '.requestId // ""' <<<"$event")"
     if [[ -n "$request_id" && "$request_id" != "$previous_id" ]]; then
       break
@@ -123,9 +127,11 @@ assert_capture() {
   fi
 
   if ! jq -e --arg protocol "$protocol" --arg status_test "$status_test" --arg mode "$mode" \
-    --arg device "$EXPECTED_DEVICE" --arg package "$APP_ID" --arg url_fragment "$url_fragment" '
+    --arg device "$EXPECTED_DEVICE" --arg package "$APP_ID" --arg url_fragment "$url_fragment" --arg sid "$CAPTURE_ID" '
     .protocol == $protocol and
     .failure == null and
+    .capture_session_id == $sid and
+    .attribution.status == "verified" and
     .meta.deviceSerial == $device and
     .meta.packageName == $package and
     .meta.processId != null and

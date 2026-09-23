@@ -86,7 +86,9 @@ independent invocations:
 
 ```bash
 lynx network start --json
-lynx network list --json
+lynx network list --json                 # session catalog
+lynx network snapshot --json             # active session, finite view
+lynx network list --session <session_id> --json
 lynx network doctor --json
 lynx network stop --json
 ```

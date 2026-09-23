@@ -71,14 +71,20 @@ the process PID; agents should not supply a fabricated PID.
 $LYNX network start --json
 $LYNX network doctor --json
 $LYNX network list --json
+$LYNX network snapshot --json
+$LYNX network list --session <session_id> --json
 $LYNX network get <request_id> --json
 $LYNX network stop --json
 ```
 
 `network doctor` reports protocol support, proxy endpoint/status, CA
 fingerprint/path, trust guidance, and explicit unsupported/bypass limitations.
-`network list` returns complete retained exchanges; `network get` retrieves one
-exchange by request ID.
+`network list` is the compact session catalog. `network snapshot` reads the
+currently running capture without stopping it; pass its `session_id` to
+`network list --session` for verified app-only exchanges. `network get` retrieves
+one verified exchange by request ID. Native network responses use
+`schema_version: "lynx.v2"`; unknown sessions and missing active captures are
+structured errors.
 
 Supported protocol evidence:
 

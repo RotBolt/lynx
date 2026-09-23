@@ -13,6 +13,8 @@ certificates and traffic remain under ignored `build/verification/` directories.
 | M1.1-04 | pending | pass: legacy DB/protocol regression | pass: legacy DB/protocol regression | source/snapshot rows matched on both platforms | pass | pass | pass | Android proxy `:0`, no reverse mappings, macOS web and secure-web proxies restored | pass; versioned verified-capture repository internal until lifecycle/cutover |
 | M1.1-06 | pending | pass: real sample H1/H2/WSS and DB validation | pass: real sample H1/H2/WSS and DB validation | source/snapshot rows matched on both platforms | pass | pass | pass | Android proxy `:0`; macOS web and secure-web proxies restored | candidate verification recorded; checkpoint follows committed-tree gate |
 | M1.1-07 | `8ed413c` / `checkpoint/m1-1/07-ios-scope` | pass: legacy Android regression | pass: scoped iOS H1/H2/WSS and foreign pass-through | source/snapshot rows matched on both platforms | pass | pass | pass | Android proxy `:0`; macOS web and secure-web proxies restored | pass; Android ownership remains M1.1-08 |
+| M1.1-08 / WS | `08eb040` | pass: relay transport and live WSS frames | pass: relay-independent iOS scope | source/snapshot rows matched on both platforms | pass | pass | pass | Android proxy `:0`, no reverse mappings; macOS lease restored | pass; manual Android live WSS evidence |
+| M1.1-09 | pending | pass: session-scoped H1/H2/WSS | pass: session-scoped H1/H2/WSS | source/snapshot rows matched on both platforms | pass | pass | pass | Android proxy `:0`, no reverse mappings; macOS lease restored | pre-commit pass; commit/tag follows committed-tree rerun |
 
 Use `pass`, `fail`, `blocked`, or `not_run`; never replace a missing live row
 with an old result or a local fixture.

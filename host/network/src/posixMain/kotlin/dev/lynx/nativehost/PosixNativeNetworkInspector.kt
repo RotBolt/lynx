@@ -40,13 +40,93 @@ class PosixNativeNetworkInspector(
         is NetworkCommand.Start -> start(command.settings)
         NetworkCommand.Stop -> { store.captureId()?.let(captures::stop); restoreDeviceProxy(); store.clearRunning(); store.clearWorkerReady(); NetworkCommandResult.Stopped }
         is NetworkCommand.List -> NetworkCommandResult.Exchanges(store.list(command.filter))
-        is NetworkCommand.Get -> store.get(command.requestId)?.let(NetworkCommandResult::Exchange)
+        NetworkCommand.Snapshot -> snapshot()
+        NetworkCommand.Sessions -> sessionCatalog()
+        is NetworkCommand.SessionList -> sessionExchanges(command.sessionId, command.filter)
+        is NetworkCommand.Get -> verifiedExchange(command.requestId)?.let(NetworkCommandResult::Exchange)
             ?: error("network exchange not found: ${command.requestId.value}")
         NetworkCommand.Doctor -> {
             reconcileRunningState()
             NetworkCommandResult.Diagnostics(capabilities())
         }
     }
+
+    private fun snapshot(): NetworkCommandResult.Snapshot {
+        val id = store.captureId()?.takeIf { store.isRunning() } ?: error("NO_ACTIVE_CAPTURE")
+        val read = captureRepository.read(id)
+        return NetworkCommandResult.Snapshot(id, read.throughSequence, scopedExchanges(read), read.inFlightCount)
+    }
+
+    private fun sessionCatalog(): NetworkCommandResult.Sessions = NetworkCommandResult.Sessions(
+        captureRepository.sessions().map { session ->
+            val read = captureRepository.read(session.id)
+            val exchanges = scopedExchanges(read)
+            NetworkCommandResult.NetworkSessionSummary(
+                sessionId = session.id,
+                attachmentId = session.attachmentId,
+                target = session.target,
+                state = session.state,
+                startedAtEpochMillis = session.startedAtEpochMillis,
+                exchangeCount = exchanges.size,
+                failureCount = exchanges.count { it.failure != null },
+                inFlightCount = read.inFlightCount,
+            )
+        },
+    )
+
+    private fun sessionExchanges(id: String, filter: NetworkFilter): NetworkCommandResult {
+        val read = captureRepository.session(id)?.let { captureRepository.read(id) }
+            ?: error("CAPTURE_SESSION_NOT_FOUND")
+        val method = filter.method
+        val status = filter.status
+        val urlSubstring = filter.urlSubstring
+        val sinceEpochMillis = filter.sinceEpochMillis
+        val exchanges = scopedExchanges(read).asSequence()
+            .filter { exchange ->
+                (method == null || exchange.request.method.equals(method, ignoreCase = true)) &&
+                    (status == null || exchange.response?.status == status) &&
+                    (urlSubstring == null || exchange.request.url.contains(urlSubstring, ignoreCase = true)) &&
+                    (sinceEpochMillis == null || exchange.timing.startedAtEpochMillis >= sinceEpochMillis)
+            }
+            .let { values -> filter.limit?.let(values::take) ?: values }
+            .toList()
+        return NetworkCommandResult.ScopedExchanges(id, read.throughSequence, exchanges, read.inFlightCount)
+    }
+
+    private fun verifiedExchange(requestId: RequestId): NetworkExchange? {
+        captureRepository.sessions().asSequence().forEach { session ->
+            val read = captureRepository.read(session.id)
+            scopedExchanges(read).lastOrNull { it.requestId == requestId }?.let { return it }
+        }
+        return null
+    }
+
+    private fun scopedExchanges(read: CaptureRead): List<NetworkExchange> {
+        val latest = LinkedHashMap<RequestId, Pair<Long, NetworkExchange>>()
+        read.exchanges.forEach { verified ->
+            val exchange = verified.exchange.copy(
+                captureSessionId = read.session.id,
+                sequence = latestSequence(read, verified),
+                attribution = NetworkAttribution(
+                    status = "verified",
+                    method = verified.context.origin.method,
+                    deviceId = verified.context.origin.target.deviceId,
+                    applicationId = verified.context.origin.target.applicationId,
+                    processId = verified.context.origin.process.pid,
+                    processStartIdentity = verified.context.origin.process.startIdentity,
+                    uid = verified.context.origin.uid,
+                ),
+            )
+            val sequence = exchange.sequence ?: 0L
+            latest[exchange.requestId] = sequence to exchange
+        }
+        return latest.values.sortedBy { it.first }.map { it.second }
+    }
+
+    /** CaptureRead currently returns verified rows in sequence order; use a stable local index
+     * until the repository exposes the per-row sequence alongside each value. */
+    private fun latestSequence(read: CaptureRead, verified: VerifiedExchange): Long =
+        read.exchanges.indexOf(verified).toLong() + 1L
 
     private fun capabilities() = NetworkCapabilities(
         httpsMitm = true,
@@ -65,7 +145,14 @@ class PosixNativeNetworkInspector(
         if (store.isRunning() && store.endpoint() == endpoint) {
             if (currentCaptureHealthy()) {
                 val running = capabilities().copy(proxyEndpoint = endpoint, proxyStatus = "running")
-                return NetworkCommandResult.Started(endpoint, running)
+                return NetworkCommandResult.Started(
+                    endpoint = endpoint,
+                    capabilities = running,
+                    sessionId = store.captureId(),
+                    attachmentId = sessions.load()?.id,
+                    target = sessions.load()?.let(::captureTarget),
+                    alreadyRunning = true,
+                )
             }
             reconcileRunningState()
         }
@@ -127,7 +214,13 @@ class PosixNativeNetworkInspector(
                     } ?: applyDeviceProxy(port, settings.listenHost, captureToken)
                     val running = caps.copy(proxyStatus = "running")
                     store.setRunning(endpoint, running, activePreviousProxy, workerPid, workerStartIdentity, supervisorPid, captureToken, captureId)
-                    return NetworkCommandResult.Started(endpoint, running)
+                    return NetworkCommandResult.Started(
+                        endpoint = endpoint,
+                        capabilities = running,
+                        sessionId = captureId,
+                        attachmentId = session?.id,
+                        target = session?.let(::captureTarget),
+                    )
                 }
                 usleep(50_000u)
             }
@@ -141,6 +234,12 @@ class PosixNativeNetworkInspector(
             throw error
         }
     }
+
+    private fun captureTarget(session: NativeSession): CaptureTarget = CaptureTarget(
+        platform = if (session.deviceSerial.startsWith("ios-simulator:")) "ios" else "android",
+        deviceId = session.deviceSerial.removePrefix("ios-simulator:"),
+        applicationId = session.packageName,
+    )
 
     private fun applyDeviceProxy(port: Int, listenHost: String, captureToken: String): Map<String, String?>? {
         val session = sessions.load() ?: return null
@@ -214,7 +313,9 @@ class PosixNativeNetworkInspector(
         val endpoint = store.endpoint() ?: return false
         val port = endpoint.substringAfterLast(':').toIntOrNull() ?: return false
         val token = store.captureToken() ?: return false
-        if (!store.workerReady(port, token, store.workerPid())) return false
+        val captureId = store.captureId() ?: return false
+        val worker = store.workerIdentity() ?: return false
+        if (!store.workerReady(NativeCaptureLease(captureId, token, endpoint, worker))) return false
         if (!workerIdentityIsCurrent() || !probeListener(port)) return false
         val hasMacLease = store.macProxyLease() != null
         return !hasMacLease || store.supervisorReady(token, store.supervisorPid())
@@ -346,9 +447,21 @@ class PosixNativeNetworkInspector(
         val started = getTimeMillis()
         var admissionDecision: ConnectionAdmission.Decision? = null
         var relayPrefaceSeen = false
+        var verifiedOrigin: VerifiedOrigin? = null
         try {
-            val relayPrefix = readRelayPreface(client) { relayPrefaceSeen = true }
+            val relayPrefix = readRelayPreface(client) {
+                relayPrefaceSeen = true
+                val attached = sessions.load() ?: error("relay metadata has no attached session")
+                verifiedOrigin = VerifiedOrigin(
+                    target = captureTarget(attached),
+                    process = ProcessIdentity(attached.processId, "android-relay:${attached.processId}"),
+                    method = it.method,
+                )
+            }
             admissionDecision = admission(client)
+            if (admissionDecision is ConnectionAdmission.Decision.Intercept) {
+                verifiedOrigin = admissionDecision.origin
+            }
             val raw = readHeaders(client, relayPrefix)
             val request = NativeHttpParser.parseRequest(raw)
             if (admissionDecision is ConnectionAdmission.Decision.PassThrough) {
@@ -357,7 +470,7 @@ class PosixNativeNetworkInspector(
             }
             val requestId = RequestId("req_${randomId()}")
             if (request.method.equals("CONNECT", true)) {
-                handleConnect(client, request.url, requestId, started)
+                handleConnect(client, request.url, requestId, started, verifiedOrigin)
                 return
             }
             val target = parseTarget(request.url, request.headers["Host"] ?: request.headers["host"])
@@ -370,7 +483,7 @@ class PosixNativeNetworkInspector(
                 val responseHeadValue = NativeHttpParser.parseResponse(responseHead)
                 if (responseHeadValue.status == 101 && responseHeadValue.headers.keys.any { it.equals("Upgrade", true) }) {
                     sendBytes(client, responseHead.encodeToByteArray())
-                    relayPlainWebSocket(client, upstream, request, requestId, responseHeadValue, started)
+                    relayPlainWebSocket(client, upstream, request, requestId, responseHeadValue, started, verifiedOrigin)
                     return
                 }
                 val responseBody = readUntilClose(upstream)
@@ -380,7 +493,7 @@ class PosixNativeNetworkInspector(
                         responseHeadValue.headers.mapValues { it.value.joinToString(", ") }, responseBody,
                     ).decodeToString(),
                 )
-                store.append(exchange(request, requestId, response, null, started))
+                appendTarget(exchange(request, requestId, response, null, started), verifiedOrigin)
             } finally { close(upstream) }
         } catch (t: Throwable) {
             // Foreign/unknown iOS connections are deliberately opaque. Never retain their
@@ -420,7 +533,7 @@ class PosixNativeNetworkInspector(
         } finally { close(upstream) }
     }
 
-    private fun handleConnect(client: Int, authority: String, requestId: RequestId, started: Long) {
+    private fun handleConnect(client: Int, authority: String, requestId: RequestId, started: Long, origin: VerifiedOrigin?) {
         val host = authority.substringBeforeLast(':').ifBlank { authority }
         val port = authority.substringAfterLast(':', "443").toIntOrNull() ?: 443
         try {
@@ -475,7 +588,7 @@ class PosixNativeNetworkInspector(
                         "origin negotiated ${upstream.applicationProtocol ?: "HTTP/1.1"}"
                 }
                 if (downstreamUsesHttp2) {
-                    relayTlsHttp2(downstream, upstream, host, requestId, started)
+                    relayTlsHttp2(downstream, upstream, host, requestId, started, origin)
                     return
                 }
                 val downstreamReader = NativeTlsBufferedReader(downstream)
@@ -508,7 +621,7 @@ class PosixNativeNetworkInspector(
                     downstream.write(responseHead.encodeToByteArray())
                     relayTlsWebSocket(
                         downstream, upstream, downstreamReader, upstreamReader,
-                        observedRequest, requestId, response.copy(body = ""), started,
+                        observedRequest, requestId, response.copy(body = ""), started, origin,
                     )
                 } else {
                     val responseBody = upstreamReader.readUntilClose()
@@ -516,14 +629,14 @@ class PosixNativeNetworkInspector(
                     val capturedBody = NativeHttpBodyDecoder.decode(
                         response.headers.mapValues { it.value.joinToString(", ") }, responseBody,
                     ).decodeToString()
-                    store.append(exchange(observedRequest, requestId, response.copy(body = capturedBody), null, started))
+                    appendTarget(exchange(observedRequest, requestId, response.copy(body = capturedBody), null, started), origin)
                 }
             } finally {
                 if (!upstreamClosed) upstream.close()
                 downstream.close()
             }
         } catch (t: Throwable) {
-            store.append(NetworkExchange(nativeNetworkEvidenceMeta(EvidenceId("ev_${randomId()}"), sessions.load()), requestId, NetworkRequest("CONNECT", "https://$host", emptyMap(), null), null, NetworkFailure(nativeTlsFailureKind(t), t.message), NetworkTiming(started, getTimeMillis(), getTimeMillis() - started), NetworkCaptureMetadata(false, 0, false), protocol = "HTTPS"))
+            appendTarget(NetworkExchange(nativeNetworkEvidenceMeta(EvidenceId("ev_${randomId()}"), sessions.load()), requestId, NetworkRequest("CONNECT", "https://$host", emptyMap(), null), null, NetworkFailure(nativeTlsFailureKind(t), t.message), NetworkTiming(started, getTimeMillis(), getTimeMillis() - started), NetworkCaptureMetadata(false, 0, false), protocol = "HTTPS"), origin)
         }
     }
 
@@ -536,6 +649,7 @@ class PosixNativeNetworkInspector(
         host: String,
         connectId: RequestId,
         started: Long,
+        origin: VerifiedOrigin?,
     ) {
         val requests = mutableMapOf<Int, H2Request>()
         val responses = mutableMapOf<Int, NativeHttp2Decoder.Exchange>()
@@ -562,7 +676,7 @@ class PosixNativeNetworkInspector(
                             downstreamOpen = false
                         } else {
                             upstream.write(bytes)
-                            decodeHttp2(requestDecoder, bytes, host, connectId, started).forEach { decoded ->
+                            decodeHttp2(requestDecoder, bytes, host, connectId, started, origin).forEach { decoded ->
                                 requests[decoded.streamId] = H2Request(
                                     requestId = RequestId("req_${randomId()}_${decoded.streamId}"),
                                     exchange = decoded,
@@ -576,12 +690,12 @@ class PosixNativeNetworkInspector(
                             upstreamOpen = false
                         } else {
                             downstream.write(bytes)
-                            decodeHttp2(responseDecoder, bytes, host, connectId, started).forEach { decoded ->
+                            decodeHttp2(responseDecoder, bytes, host, connectId, started, origin).forEach { decoded ->
                                 responses[decoded.streamId] = decoded
                             }
                         }
                     }
-                    flushHttp2Exchanges(requests, responses, host, connectId, started)
+                    flushHttp2Exchanges(requests, responses, host, connectId, started, origin)
                 }
             }
         } finally {
@@ -590,11 +704,11 @@ class PosixNativeNetworkInspector(
             // Preserve one-sided failures instead of silently dropping streams when a peer closes.
             requests.values.forEach { pending ->
                 if (responses.remove(pending.exchange.streamId) == null) {
-                    store.append(http2Exchange(pending, null, host, connectId, started, NetworkFailure("HTTP2_INCOMPLETE", "response stream closed before END_STREAM")))
+                    appendTarget(http2Exchange(pending, null, host, connectId, started, NetworkFailure("HTTP2_INCOMPLETE", "response stream closed before END_STREAM")), origin)
                 }
             }
             responses.values.forEach { response ->
-                store.append(http2Exchange(null, response, host, connectId, started, NetworkFailure("HTTP2_INCOMPLETE", "request stream closed before END_STREAM")))
+                    appendTarget(http2Exchange(null, response, host, connectId, started, NetworkFailure("HTTP2_INCOMPLETE", "request stream closed before END_STREAM")), origin)
             }
         }
     }
@@ -607,10 +721,11 @@ class PosixNativeNetworkInspector(
         host: String,
         connectId: RequestId,
         started: Long,
+        origin: VerifiedOrigin?,
     ): List<NativeHttp2Decoder.Exchange> = try {
         decoder.feed(bytes)
     } catch (t: Throwable) {
-        store.append(http2Exchange(null, null, host, connectId, started, NetworkFailure("HTTP2_DECODER_ERROR", t.message ?: t::class.simpleName)))
+        appendTarget(http2Exchange(null, null, host, connectId, started, NetworkFailure("HTTP2_DECODER_ERROR", t.message ?: t::class.simpleName)), origin)
         emptyList()
     }
 
@@ -620,12 +735,13 @@ class PosixNativeNetworkInspector(
         host: String,
         connectId: RequestId,
         started: Long,
+        origin: VerifiedOrigin?,
     ) {
         val complete = requests.keys.intersect(responses.keys).toList()
         complete.forEach { streamId ->
             val request = requests.remove(streamId) ?: return@forEach
             val response = responses.remove(streamId) ?: return@forEach
-            store.append(http2Exchange(request, response, host, connectId, started, null))
+            appendTarget(http2Exchange(request, response, host, connectId, started, null), origin)
         }
     }
 
@@ -664,6 +780,19 @@ class PosixNativeNetworkInspector(
         )
     }
 
+    private fun appendTarget(exchange: NetworkExchange, origin: VerifiedOrigin?) {
+        store.append(exchange)
+        val captureId = store.captureId() ?: return
+        if (origin != null) {
+            captureRepository.append(
+                VerifiedExchange(
+                    context = ConnectionContext(captureId, exchange.requestId.value, origin, exchange.timing.startedAtEpochMillis),
+                    exchange = exchange,
+                ),
+            )
+        }
+    }
+
     private fun exchange(request: NativeHttpParser.Request, id: RequestId, response: NativeHttpParser.Response?, failure: NetworkFailure?, started: Long) = NetworkExchange(
         meta = nativeNetworkEvidenceMeta(EvidenceId("ev_${randomId()}"), sessions.load()),
         requestId = id,
@@ -689,18 +818,39 @@ class PosixNativeNetworkInspector(
         val targetHost = parts[0].takeUnless { it == "10.0.2.2" } ?: "127.0.0.1"
         return targetHost to (parts.getOrNull(1)?.toIntOrNull() ?: 80)
     }
-    private fun connect(host: String, port: Int): Int = memScoped { val hints = alloc<addrinfo>(); hints.ai_family = AF_UNSPEC; hints.ai_socktype = SOCK_STREAM; val result = allocPointerTo<addrinfo>(); require(getaddrinfo(host, port.toString(), hints.ptr, result.ptr) == 0); val info = result.value ?: error("unable to resolve $host"); val fd = socket(info.pointed.ai_family, info.pointed.ai_socktype, info.pointed.ai_protocol); require(fd >= 0); require(platform.posix.connect(fd, info.pointed.ai_addr, info.pointed.ai_addrlen) == 0); freeaddrinfo(info); fd }
+    private fun connect(host: String, port: Int): Int = memScoped {
+        val hints = alloc<addrinfo>()
+        hints.ai_family = AF_UNSPEC
+        hints.ai_socktype = SOCK_STREAM
+        val result = allocPointerTo<addrinfo>()
+        require(getaddrinfo(host, port.toString(), hints.ptr, result.ptr) == 0) { "unable to resolve $host" }
+        val first = result.value ?: error("unable to resolve $host")
+        var candidate: CPointer<addrinfo>? = first
+        while (candidate != null) {
+            val info = candidate.pointed
+            val fd = socket(info.ai_family, info.ai_socktype, info.ai_protocol)
+            if (fd >= 0) {
+                if (platform.posix.connect(fd, info.ai_addr, info.ai_addrlen) == 0) {
+                    freeaddrinfo(first)
+                    return@memScoped fd
+                }
+                close(fd)
+            }
+            candidate = info.ai_next
+        }
+        freeaddrinfo(first)
+        error("unable to connect to $host:$port")
+    }
     /** Read exactly through the header terminator. A bulk recv can consume the
      * beginning of a TLS ClientHello after CONNECT, so this intentionally reads
      * one byte at a time at the protocol boundary. */
-    private fun readRelayPreface(fd: Int, seen: () -> Unit): ByteArray {
+    private fun readRelayPreface(fd: Int, seen: (AndroidRelayPreface) -> Unit): ByteArray {
         val prefix = ByteArray(4)
         val peeked = prefix.usePinned { recv(fd, it.addressOf(0), 4uL, MSG_PEEK) }
         if (peeked < 4) return ByteArray(0)
         val length = ((prefix[0].toInt() and 0xff) shl 24) or ((prefix[1].toInt() and 0xff) shl 16) or
             ((prefix[2].toInt() and 0xff) shl 8) or (prefix[3].toInt() and 0xff)
         if (length !in 1..64 * 1024) return ByteArray(0)
-        seen()
         readExactly(fd, 4)?.let { }
         val raw = readExactly(fd, length) ?: error("relay metadata preface truncated")
         val preface = Json { ignoreUnknownKeys = false }.decodeFromString(AndroidRelayPreface.serializer(), raw.decodeToString())
@@ -710,6 +860,7 @@ class PosixNativeNetworkInspector(
         require(preface.captureToken == store.captureToken()) { "relay capture token rejected" }
         require(preface.deviceSerial == session.deviceSerial && preface.packageName == session.packageName) { "relay target does not match attachment" }
         require(preface.decision == "verified_target") { "relay connection is not verified target" }
+        seen(preface)
         return ByteArray(0)
     }
     private fun readHeaders(fd: Int, initial: ByteArray = ByteArray(0)): String { val bytes = initial.toMutableList(); while (bytes.size < 1024 * 1024) { if (bytes.size >= 4 && bytes.takeLast(4).toByteArray().decodeToString() == "\r\n\r\n") break; memScoped { val native = allocArray<ByteVar>(1); val count = recv(fd, native, 1uL, 0); if (count <= 0) return bytes.toByteArray().decodeToString(); bytes += native[0] } }; return bytes.toByteArray().decodeToString() }
@@ -741,9 +892,9 @@ class PosixNativeNetworkInspector(
             }
         }
     }
-    private fun relayPlainWebSocket(client: Int, upstream: Int, request: NativeHttpParser.Request, id: RequestId, response: NativeHttpParser.Response, started: Long) {
+    private fun relayPlainWebSocket(client: Int, upstream: Int, request: NativeHttpParser.Request, id: RequestId, response: NativeHttpParser.Response, started: Long, origin: VerifiedOrigin?) {
         val frames = mutableListOf<NetworkFrame>()
-        fun publish() { store.append(exchange(request, id, response, null, started).copy(protocol = "WebSocket", frames = frames.toList())) }
+        fun publish() { appendTarget(exchange(request, id, response, null, started).copy(protocol = "WebSocket", frames = frames.toList()), origin) }
         publish()
         memScoped {
             val pollers = allocArray<pollfd>(2)
@@ -774,9 +925,10 @@ class PosixNativeNetworkInspector(
         id: RequestId,
         response: NativeHttpParser.Response,
         started: Long,
+        origin: VerifiedOrigin?,
     ) {
         val frames = mutableListOf<NetworkFrame>()
-        fun publish() { store.append(exchange(request, id, response, null, started).copy(protocol = "WebSocket", frames = frames.toList())) }
+        fun publish() { appendTarget(exchange(request, id, response, null, started).copy(protocol = "WebSocket", frames = frames.toList()), origin) }
         publish()
         memScoped {
             val pollers = allocArray<pollfd>(2)

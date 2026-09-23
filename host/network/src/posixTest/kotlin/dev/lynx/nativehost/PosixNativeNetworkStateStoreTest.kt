@@ -52,6 +52,23 @@ class PosixNativeNetworkStateStoreTest {
     }
 
     @Test
+    fun captureLeaseReadinessIsAcceptedByIndependentReaders() {
+        val root = "/tmp/lynx-network-state-capture-ready-${kotlin.time.Clock.System.now().toEpochMilliseconds()}"
+        val store = PosixNativeNetworkStateStore(root)
+        val lease = NativeCaptureLease(
+            captureId = "capture_a",
+            captureToken = "token_a",
+            endpoint = "0.0.0.0:62006",
+            worker = NativeWorkerIdentity(4812, "start-a"),
+        )
+        store.setRunning(lease.endpoint, NetworkCapabilities(httpsMitm = true), null, 4812, "start-a", null, lease.captureToken, lease.captureId)
+        store.markWorkerReady(lease)
+
+        assertEquals(true, store.workerReady(lease))
+        store.clearRunning()
+    }
+
+    @Test
     fun runningStateReadersNeverObserveAnInProgressRewriteAsStopped() {
         val root = "/tmp/lynx-network-state-test-${kotlin.time.Clock.System.now().toEpochMilliseconds()}"
         val store = PosixNativeNetworkStateStore(root)

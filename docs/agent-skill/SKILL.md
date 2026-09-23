@@ -79,11 +79,14 @@ in one shell and query it from another:
 lynx network start --json
 lynx network doctor --json
 lynx network list --json
+lynx network snapshot --json
 ```
 
-Use the `requestId` from `network list` with `network get` to retrieve the
-complete request/response bodies, headers, timing, failures, and WebSocket
-frames. Capture requires the app to use the Android system proxy and trust the
+`network list` is a session catalog. Use the returned `session_id` with
+`network list --session <session_id>` to retrieve verified app-only exchanges;
+use a request ID from that response with `network get` for complete
+request/response bodies, headers, timing, failures, and WebSocket frames.
+Capture requires the app to use the Android system proxy and trust the
 Lynx CA for HTTPS; direct/native sockets, certificate pinning, and QUIC/HTTP3
 are reported as limitations rather than silently treated as captured.
 

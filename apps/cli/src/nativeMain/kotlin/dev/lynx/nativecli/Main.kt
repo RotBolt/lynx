@@ -6,9 +6,6 @@ import dev.lynx.network.NativeNetworkBackend
 import dev.lynx.network.nativeNetworkBackend
 import dev.lynx.model.DatabaseId
 import dev.lynx.model.NetworkCommand
-import dev.lynx.model.NetworkCaptureSettings
-import dev.lynx.model.NetworkFilter
-import dev.lynx.model.RequestId
 import kotlinx.serialization.json.*
 
 expect fun nativeProcessRunner(): NativeProcessRunner
@@ -76,17 +73,41 @@ class NativeCli(
             println(json.encodeToString(state))
             return
         }
-        val command = when (args.firstOrNull()) {
-            "start" -> NetworkCommand.Start(NetworkCaptureSettings(listenHost = option(args, "--host") ?: "0.0.0.0", listenPort = option(args, "--port")?.toIntOrNull() ?: 0))
-            "stop" -> NetworkCommand.Stop
-            "list" -> NetworkCommand.List(NetworkFilter(method = option(args, "--method"), status = option(args, "--status")?.toIntOrNull(), urlSubstring = option(args, "--url"), limit = option(args, "--limit")?.toIntOrNull()))
-            "get" -> NetworkCommand.Get(RequestId(args.getOrNull(1) ?: error("request id is required")))
-            "doctor" -> NetworkCommand.Doctor
-            "worker" -> { networkWorker(option(args, "--port")?.toIntOrNull() ?: args.getOrNull(1)?.toIntOrNull() ?: error("port is required")); return }
-            "supervisor" -> { networkSupervisor(option(args, "--port")?.toIntOrNull() ?: args.getOrNull(1)?.toIntOrNull() ?: error("port is required")); return }
-            else -> error("Usage: lynx network [start|stop|list|get|doctor]")
+        runCatching {
+            val command = when (args.firstOrNull()) {
+                "worker" -> { networkWorker(option(args, "--port")?.toIntOrNull() ?: args.getOrNull(1)?.toIntOrNull() ?: error("port is required")); return }
+                "supervisor" -> { networkSupervisor(option(args, "--port")?.toIntOrNull() ?: args.getOrNull(1)?.toIntOrNull() ?: error("port is required")); return }
+                else -> NetworkInspectionCommands.parse(args)
+            }
+            network.execute(command)
         }
-        println(json.encodeToString(normalizeNetworkJson(json.encodeToJsonElement(network.execute(command)))))
+            .onSuccess { result -> println(networkEnvelope(normalizeNetworkJson(json.encodeToJsonElement(result)))) }
+            .onFailure { error -> println(networkError(error)) }
+    }
+
+    private fun networkEnvelope(element: JsonElement): JsonObject = buildJsonObject {
+        put("protocol_version", 1)
+        put("schema_version", "lynx.v2")
+        element.jsonObject.forEach { (key, value) -> put(key, value) }
+    }
+
+    private fun networkError(error: Throwable): String {
+        val message = error.message ?: error::class.simpleName.orEmpty()
+        val code = when {
+            message.startsWith("NO_ACTIVE_CAPTURE") -> "NO_ACTIVE_CAPTURE"
+            message.startsWith("CAPTURE_SESSION_NOT_FOUND") -> "CAPTURE_SESSION_NOT_FOUND"
+            message.startsWith("SESSION_REQUIRED") -> "SESSION_REQUIRED"
+            else -> "NETWORK_ERROR"
+        }
+        return json.encodeToString(buildJsonObject {
+            put("protocol_version", 1)
+            put("schema_version", "lynx.v2")
+            put("type", "error")
+            put("code", code)
+            put("message", message)
+            put("operation", "NETWORK")
+            put("retryable", code == "NO_ACTIVE_CAPTURE")
+        })
     }
 
     private fun networkWorker(port: Int) {
@@ -184,7 +205,10 @@ class NativeCli(
         else -> error("unsupported platform '$platform'; expected android or ios")
     }
 
-    private fun option(args: List<String>, name: String): String? = args.windowed(2, 1).firstOrNull { it[0] == name }?.getOrNull(1)
+    private fun option(args: List<String>, name: String): String? {
+        args.firstOrNull { it.startsWith("$name=") }?.substringAfter('=')?.takeIf(String::isNotEmpty)?.let { return it }
+        return args.windowed(2, 1).firstOrNull { it[0] == name }?.getOrNull(1)?.takeUnless { it.startsWith("--") }
+    }
     private fun safeName(value: String) = value.replace(Regex("[^A-Za-z0-9_.-]"), "_")
     private fun requireSafeRelativePath(value: String) {
         require(!value.startsWith('/') && value.split('/').none { it == ".." || it.isBlank() }) {
