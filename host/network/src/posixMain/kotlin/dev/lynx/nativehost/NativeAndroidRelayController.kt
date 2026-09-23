@@ -58,7 +58,6 @@ class NativeAndroidRelayController(private val processes: NativeProcessRunner) {
         if (override != null && processes.run(listOf("test", "-x", override)).exitCode == 0) return override
 
         val executable = nativeExecutablePath() ?: return null
-        val root = executable.substringBeforeLast('/', missingDelimiterValue = ".")
         val abiOutput = processes.run(listOf("adb", "-s", deviceSerial, "shell", "getprop", "ro.product.cpu.abilist")).stdout
         val abis = abiOutput.trim().split(',').filter { it.isNotBlank() }
         val candidates = (abis + listOf("arm64-v8a", "x86_64")).mapNotNull { abi ->
@@ -68,9 +67,27 @@ class NativeAndroidRelayController(private val processes: NativeProcessRunner) {
                 else -> null
             }
         }.distinct()
-        return candidates
-            .map { "$root/android-relay/$it/lynx-android-relay" }
+        return relayRoots(executable)
+            .asSequence()
+            .flatMap { root -> candidates.asSequence().map { abi -> "$root/$abi/lynx-android-relay" } }
             .firstOrNull { processes.run(listOf("test", "-x", it)).exitCode == 0 }
+    }
+
+    /** Resolve helpers from a release bundle and from the repository's source-build output.
+     * A raw `lynx.kexe` is not distributed with siblings, so silently falling back to the
+     * host proxy would lose app-scoped evidence. */
+    private fun relayRoots(executable: String): List<String> {
+        val roots = linkedSetOf<String>()
+        getenv("LYNX_ANDROID_RELAY_DIR")?.toKString()?.takeIf(String::isNotBlank)?.let(roots::add)
+        var cursor = executable.substringBeforeLast('/', missingDelimiterValue = "")
+        repeat(8) {
+            if (cursor.isBlank()) return@repeat
+            roots += "$cursor/android-relay"
+            roots += "$cursor/build/android-relay"
+            roots += "$cursor/build/android-relay-m1-1-08"
+            cursor = cursor.substringBeforeLast('/', missingDelimiterValue = "")
+        }
+        return roots.toList()
     }
 
     private fun adbExecutable(): String = PosixHostToolResolver().resolve(HostTool.ADB).path ?: "adb"

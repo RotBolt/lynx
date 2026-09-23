@@ -87,6 +87,7 @@ describe the JVM backend and must not be treated as proof of native parity.
 | M1.1-WS | Publish open WebSocket handshake/data/control frames incrementally; no close required. | Live reads before close + V0 + V6 | `fix(network): publish live websocket frames` / `checkpoint/m1-1/WS-live-frames` |
 | M1.1-09 | Native CLI session catalog/snapshot/scoped list/get; update consumers atomically. | V7 + V0 + V6 both | `feat(cli)!: scope network inspection sessions` / `checkpoint/m1-1/09-scoped-cli` |
 | M1.1-09a | Cross-target lifecycle hardening: an active capture is immutable to its attached device/app; snapshot/start reject a different attachment, while stop/detach restore the persisted capture target instead of routing iOS identifiers through ADB. | V7 + iOS stop/detach regression + V0 | `fix(network): isolate cross-target cleanup` / `checkpoint/m1-1/09a-cross-target-cleanup` |
+| M1.1-09b | iOS snapshot and cleanup regression: validate active iOS snapshots with real target traffic; prevent stale Android proxy records from invoking ADB during iOS stop/detach; preserve Android cleanup and database behavior. | iOS snapshot non-empty positive + no-traffic contract + no-ADB stop/detach + V0 | `fix(network): harden iOS capture cleanup` / `checkpoint/m1-1/09b-ios-cleanup` |
 | M1.1-10 | Extracted distribution, bundled agent instructions, complete regression report. | V8 | `6d4d1cc` / `checkpoint/m1-1/10-macos-release-ready` |
 
 Execution is sequential. Inactive adapter code may be added behind internal test
@@ -143,6 +144,8 @@ user's current proxy choices. New code must not make legacy state unreadable.
 
 - [ ] All tickets have verified local checkpoints and reproducible evidence.
 - [ ] Both native app-only commands exclude same-destination non-target controls.
+- [ ] iOS snapshot reports real target exchanges, and iOS stop/detach never route
+      simulator identifiers through ADB.
 - [ ] Existing DB and real H1/H2/WSS results remain readable and correct on both targets.
 - [ ] No source changes occurred in the sample apps.
 - [ ] Missing ownership is explicit; physical-iOS/background-service limits are documented.

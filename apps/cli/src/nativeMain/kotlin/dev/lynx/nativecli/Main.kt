@@ -98,6 +98,7 @@ class NativeCli(
             message.startsWith("CAPTURE_SESSION_NOT_FOUND") -> "CAPTURE_SESSION_NOT_FOUND"
             message.startsWith("CAPTURE_TARGET_MISMATCH") -> "CAPTURE_TARGET_MISMATCH"
             message.startsWith("CAPTURE_ACTIVE") -> "CAPTURE_ACTIVE"
+            message.startsWith("ANDROID_RELAY_UNAVAILABLE") -> "ANDROID_RELAY_UNAVAILABLE"
             message.startsWith("SESSION_REQUIRED") -> "SESSION_REQUIRED"
             else -> "NETWORK_ERROR"
         }

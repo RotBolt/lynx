@@ -259,22 +259,15 @@ class PosixNativeNetworkInspector(
             }
             return macProxy.apply(port)
         }
-        if (androidRelay.available(session.deviceSerial)) {
-            val relay = androidRelay.start(session.deviceSerial, session.packageName, session.processId, port, captureId = store.captureId() ?: error("ANDROID_RELAY_CAPTURE_ID_UNAVAILABLE"), captureToken)
-            val previous = androidProxy.apply(session.deviceSerial, "127.0.0.1", relay.relayPort).toMutableMap()
-            previous["controller"] = "android-relay"
-            previous["relayPath"] = relay.remotePath
-            previous["relayPid"] = relay.relayPid
-            previous["relayPort"] = relay.relayPort.toString()
-            previous["relayUpstreamPort"] = relay.upstreamPort.toString()
-            return previous
-        }
-        val visibleHost = when {
-            session.deviceSerial.startsWith("emulator-") -> "10.0.2.2"
-            listenHost != "0.0.0.0" -> listenHost
-            else -> error("an explicit reachable --host is required for physical Android devices")
-        }
-        return androidProxy.apply(session.deviceSerial, visibleHost, port)
+        require(androidRelay.available(session.deviceSerial)) { "ANDROID_RELAY_UNAVAILABLE" }
+        val relay = androidRelay.start(session.deviceSerial, session.packageName, session.processId, port, captureId = store.captureId() ?: error("ANDROID_RELAY_CAPTURE_ID_UNAVAILABLE"), captureToken)
+        val previous = androidProxy.apply(session.deviceSerial, "127.0.0.1", relay.relayPort).toMutableMap()
+        previous["controller"] = "android-relay"
+        previous["relayPath"] = relay.remotePath
+        previous["relayPid"] = relay.relayPid
+        previous["relayPort"] = relay.relayPort.toString()
+        previous["relayUpstreamPort"] = relay.upstreamPort.toString()
+        return previous
     }
 
     private fun restoreDeviceProxy() {
@@ -288,9 +281,10 @@ class PosixNativeNetworkInspector(
             macRecovery.restoreOwnedLease()
             return
         }
-        val deviceSerial = captureTargetForCleanup()?.let(::deviceSerialForTarget)
-            ?: sessions.load()?.deviceSerial
-            ?: return
+        // Android cleanup must never be attempted for an iOS capture. A stale or
+        // partially-written proxy record can otherwise route an iOS UDID through
+        // adb, which reports the opaque `<udid>:features` host-service error.
+        val deviceSerial = androidDeviceForCleanup() ?: return
         if (previous?.get("controller") == "android-relay") {
             val relay = NativeAndroidRelayController.Lease(
                 remotePath = previous["relayPath"] ?: return,
@@ -307,8 +301,7 @@ class PosixNativeNetworkInspector(
         if (previous?.get("controller") == "macos") {
             macProxy.restore(previous)
         } else {
-            captureTargetForCleanup()?.let(::deviceSerialForTarget)?.let { androidProxy.restore(it, previous) }
-            ?: sessions.load()?.let { androidProxy.restore(it.deviceSerial, previous) }
+            androidDeviceForCleanup()?.let { androidProxy.restore(it, previous) }
         }
     }
 
@@ -316,8 +309,12 @@ class PosixNativeNetworkInspector(
         ?.let(captureRepository::session)
         ?.target
 
-    private fun deviceSerialForTarget(target: CaptureTarget): String =
-        if (target.platform == "ios") "ios-simulator:${target.deviceId}" else target.deviceId
+    private fun androidDeviceForCleanup(): String? {
+        captureTargetForCleanup()?.let { target ->
+            return target.deviceId.takeIf { target.platform.equals("android", ignoreCase = true) }
+        }
+        return sessions.load()?.deviceSerial?.takeUnless { it.startsWith("ios-simulator:") }
+    }
 
     private fun reconcileRunningState() {
         if (!store.isRunning()) return

@@ -70,6 +70,51 @@ class NativeMacProxyLifecycleTest {
     }
 
     @Test
+    fun stopDoesNotRouteAnIosCaptureThroughAdbWhenProxyRecordIsStale() {
+        val root = "/tmp/lynx-network-ios-cleanup-${kotlin.time.Clock.System.now().toEpochMilliseconds()}"
+        val store = PosixNativeNetworkStateStore(root)
+        val repository = PosixCaptureRepository("$root/captures")
+        repository.create(
+            CaptureSession(
+                id = "capture-ios",
+                attachmentId = "session-ios",
+                target = CaptureTarget("ios", "SIM-1", "dev.lynx.dummyapp"),
+                state = CaptureState.RUNNING,
+                startedAtEpochMillis = 1,
+            ),
+        )
+        store.setRunning(
+            endpoint = "0.0.0.0:62006",
+            capabilities = NetworkCapabilities(httpsMitm = true),
+            previousProxy = mapOf(
+                "controller" to "android-relay",
+                "relayPath" to "/data/local/tmp/lynx/relay-capture-ios",
+                "relayPid" to "4812",
+                "relayPort" to "62007",
+                "relayUpstreamPort" to "62006",
+            ),
+            workerPid = 4813,
+            workerStartIdentity = "worker-start",
+            supervisorPid = null,
+            captureToken = "token",
+            captureId = "capture-ios",
+        )
+        val runner = RecordingRunner()
+
+        PosixNativeNetworkInspector(
+            store = store,
+            sessions = InMemoryNativeSessionStore().also {
+                it.save(NativeSession("session-ios", "ios-simulator:SIM-1", "dev.lynx.dummyapp", 9123))
+            },
+            processes = runner,
+            captureRepository = repository,
+        ).execute(NetworkCommand.Stop)
+
+        assertFalse(runner.commands.any { it.firstOrNull() == "adb" })
+        assertFalse(store.isRunning())
+    }
+
+    @Test
     fun snapshotRejectsActiveCaptureForDifferentAttachmentTarget() {
         val root = "/tmp/lynx-network-cross-target-snapshot-${kotlin.time.Clock.System.now().toEpochMilliseconds()}"
         val store = PosixNativeNetworkStateStore(root)
