@@ -1,0 +1,5 @@
+cmake_minimum_required(VERSION 3.22.1)
+project(lynx_android_relay C)
+add_executable(lynx-android-relay src/main.c)
+target_compile_features(lynx-android-relay PRIVATE c_std_11)
+target_compile_options(lynx-android-relay PRIVATE -Wall -Wextra -Werror -fstack-protector-strong)

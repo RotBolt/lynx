@@ -62,6 +62,10 @@ kotlin {
                 defFile(project.file("src/nativeInterop/cinterop/lynx-brotli-macos.def"))
                 compilerOpts("-I${project.file("src/nativeInterop/cinterop").absolutePath}")
             }
+            create("lynxProc") {
+                defFile(project.file("src/nativeInterop/cinterop/lynx-proc-macos.def"))
+                compilerOpts("-I${project.file("src/nativeInterop/cinterop").absolutePath}")
+            }
         }
     }
     mingwX64()

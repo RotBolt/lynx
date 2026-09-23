@@ -2,7 +2,21 @@ package dev.lynx.nativehost
 
 import dev.lynx.model.*
 import kotlinx.cinterop.*
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
 import platform.posix.*
+
+@Serializable
+private data class AndroidRelayPreface(
+    @SerialName("protocol_version") val protocolVersion: Int,
+    @SerialName("capture_id") val captureId: String,
+    @SerialName("capture_token") val captureToken: String,
+    @SerialName("device_serial") val deviceSerial: String,
+    @SerialName("package_name") val packageName: String,
+    val decision: String,
+    val method: String,
+)
 
 /** Native, process-independent proxy. Protocol parsing stays in the shared POSIX layer while TLS
  * and HPACK are provided by the platform's native adapters. */
@@ -12,19 +26,112 @@ class PosixNativeNetworkInspector(
     private val sessions: NativeSessionStore = PosixNativeSessionStore(),
     private val processes: NativeProcessRunner = PosixProcessRunner(),
     private val certificates: PosixNativeCertificateAuthority = PosixNativeCertificateAuthority(processes),
+    private val captureRepository: CaptureRepository = PosixCaptureRepository(),
 ) : NativeNetworkInspector {
     private val androidProxy = NativeAndroidProxyController(processes)
-    private val macProxy = NativeMacSystemProxyController(processes)
+    private val androidRelay = NativeAndroidRelayController(processes)
+    private val macProxy = NativeMacSystemProxyController(processes, service = null)
+    private val macRecovery = NativeMacProxyRecovery(macProxy, store)
+    private val ownerResolver = nativeConnectionOwnerResolver()
     private val clientDispatcher = PosixNativeConnectionDispatcher()
+    private val captures = NativeCaptureCoordinator(captureRepository, idProvider = { "capture_${randomId()}" })
 
     override fun execute(command: NetworkCommand): NetworkCommandResult = when (command) {
         is NetworkCommand.Start -> start(command.settings)
-        NetworkCommand.Stop -> { restoreDeviceProxy(); store.clearRunning(); store.clearWorkerReady(); NetworkCommandResult.Stopped }
+        NetworkCommand.Stop -> { store.captureId()?.let(captures::stop); restoreDeviceProxy(); store.clearRunning(); store.clearWorkerReady(); NetworkCommandResult.Stopped }
         is NetworkCommand.List -> NetworkCommandResult.Exchanges(store.list(command.filter))
-        is NetworkCommand.Get -> store.get(command.requestId)?.let(NetworkCommandResult::Exchange)
+        NetworkCommand.Snapshot -> snapshot()
+        NetworkCommand.Sessions -> sessionCatalog()
+        is NetworkCommand.SessionList -> sessionExchanges(command.sessionId, command.filter)
+        is NetworkCommand.Get -> verifiedExchange(command.requestId)?.let(NetworkCommandResult::Exchange)
             ?: error("network exchange not found: ${command.requestId.value}")
-        NetworkCommand.Doctor -> NetworkCommandResult.Diagnostics(capabilities())
+        NetworkCommand.Doctor -> {
+            reconcileRunningState()
+            NetworkCommandResult.Diagnostics(capabilities())
+        }
     }
+
+    private fun snapshot(): NetworkCommandResult.Snapshot {
+        val id = store.captureId()?.takeIf { store.isRunning() } ?: error("NO_ACTIVE_CAPTURE")
+        val capture = captureRepository.session(id) ?: error("CAPTURE_SESSION_NOT_FOUND")
+        val attached = sessions.load()
+        if (attached != null && capture.target != captureTarget(attached)) {
+            error("CAPTURE_TARGET_MISMATCH active=${capture.target.deviceId}/${capture.target.applicationId} attached=${attached.deviceSerial}/${attached.packageName}")
+        }
+        val read = captureRepository.read(id)
+        return NetworkCommandResult.Snapshot(id, read.throughSequence, scopedExchanges(read), read.inFlightCount)
+    }
+
+    private fun sessionCatalog(): NetworkCommandResult.Sessions = NetworkCommandResult.Sessions(
+        captureRepository.sessions().map { session ->
+            val read = captureRepository.read(session.id)
+            val exchanges = scopedExchanges(read)
+            NetworkCommandResult.NetworkSessionSummary(
+                sessionId = session.id,
+                attachmentId = session.attachmentId,
+                target = session.target,
+                state = session.state,
+                startedAtEpochMillis = session.startedAtEpochMillis,
+                exchangeCount = exchanges.size,
+                failureCount = exchanges.count { it.failure != null },
+                inFlightCount = read.inFlightCount,
+            )
+        },
+    )
+
+    private fun sessionExchanges(id: String, filter: NetworkFilter): NetworkCommandResult {
+        val read = captureRepository.session(id)?.let { captureRepository.read(id) }
+            ?: error("CAPTURE_SESSION_NOT_FOUND")
+        val method = filter.method
+        val status = filter.status
+        val urlSubstring = filter.urlSubstring
+        val sinceEpochMillis = filter.sinceEpochMillis
+        val exchanges = scopedExchanges(read).asSequence()
+            .filter { exchange ->
+                (method == null || exchange.request.method.equals(method, ignoreCase = true)) &&
+                    (status == null || exchange.response?.status == status) &&
+                    (urlSubstring == null || exchange.request.url.contains(urlSubstring, ignoreCase = true)) &&
+                    (sinceEpochMillis == null || exchange.timing.startedAtEpochMillis >= sinceEpochMillis)
+            }
+            .let { values -> filter.limit?.let(values::take) ?: values }
+            .toList()
+        return NetworkCommandResult.ScopedExchanges(id, read.throughSequence, exchanges, read.inFlightCount)
+    }
+
+    private fun verifiedExchange(requestId: RequestId): NetworkExchange? {
+        captureRepository.sessions().asSequence().forEach { session ->
+            val read = captureRepository.read(session.id)
+            scopedExchanges(read).lastOrNull { it.requestId == requestId }?.let { return it }
+        }
+        return null
+    }
+
+    private fun scopedExchanges(read: CaptureRead): List<NetworkExchange> {
+        val latest = LinkedHashMap<RequestId, Pair<Long, NetworkExchange>>()
+        read.exchanges.forEach { verified ->
+            val exchange = verified.exchange.copy(
+                captureSessionId = read.session.id,
+                sequence = latestSequence(read, verified),
+                attribution = NetworkAttribution(
+                    status = "verified",
+                    method = verified.context.origin.method,
+                    deviceId = verified.context.origin.target.deviceId,
+                    applicationId = verified.context.origin.target.applicationId,
+                    processId = verified.context.origin.process.pid,
+                    processStartIdentity = verified.context.origin.process.startIdentity,
+                    uid = verified.context.origin.uid,
+                ),
+            )
+            val sequence = exchange.sequence ?: 0L
+            latest[exchange.requestId] = sequence to exchange
+        }
+        return latest.values.sortedBy { it.first }.map { it.second }
+    }
+
+    /** CaptureRead currently returns verified rows in sequence order; use a stable local index
+     * until the repository exposes the per-row sequence alongside each value. */
+    private fun latestSequence(read: CaptureRead, verified: VerifiedExchange): Long =
+        read.exchanges.indexOf(verified).toLong() + 1L
 
     private fun capabilities() = NetworkCapabilities(
         httpsMitm = true,
@@ -40,34 +147,111 @@ class PosixNativeNetworkInspector(
     private fun start(settings: NetworkCaptureSettings): NetworkCommandResult.Started {
         val port = if (settings.listenPort == 0) 62006 else settings.listenPort
         val endpoint = "${settings.listenHost}:$port"
+        if (store.isRunning() && store.endpoint() == endpoint) {
+            val activeCapture = store.captureId()?.let(captureRepository::session)
+            val attached = sessions.load()
+            if (activeCapture != null && attached != null && activeCapture.target != captureTarget(attached)) {
+                error("CAPTURE_ACTIVE")
+            }
+            if (currentCaptureHealthy()) {
+                val running = capabilities().copy(proxyEndpoint = endpoint, proxyStatus = "running")
+                return NetworkCommandResult.Started(
+                    endpoint = endpoint,
+                    capabilities = running,
+                    sessionId = store.captureId(),
+                    attachmentId = sessions.load()?.id,
+                    target = sessions.load()?.let(::captureTarget),
+                    alreadyRunning = true,
+                )
+            }
+            reconcileRunningState()
+        }
+        if (!store.isRunning()) {
+            captureRepository.sessions()
+                .filter { it.state in setOf(CaptureState.STARTING, CaptureState.RUNNING, CaptureState.STOPPING) }
+                .forEach { captures.interrupt(it.id) }
+            macRecovery.restoreOwnedLease()
+        }
         val caps = capabilities().copy(proxyEndpoint = endpoint, proxyStatus = "starting")
-        val previousProxy = applyDeviceProxy(port, settings.listenHost)
+        val session = sessions.load()
+        if (session?.deviceSerial?.startsWith("ios-simulator:") == true && ownerResolver == null) {
+            error("APP_ATTRIBUTION_UNAVAILABLE")
+        }
+        val captureId = session?.let { attached ->
+            captures.start(
+                attached.id,
+                CaptureTarget(
+                    platform = if (attached.deviceSerial.startsWith("ios-simulator:")) "ios" else "android",
+                    deviceId = attached.deviceSerial.removePrefix("ios-simulator:"),
+                    applicationId = attached.packageName,
+                ),
+            ).id
+        }
+        val captureToken = "capture_${randomId()}"
+        val macLease = if (session?.deviceSerial?.startsWith("ios-simulator:") == true) {
+            require(settings.listenHost == "0.0.0.0" || settings.listenHost == "127.0.0.1") {
+                "iOS Simulator capture requires the native proxy to listen on the host"
+            }
+            macRecovery.prepareLease(endpoint, port, captureToken)
+        } else null
+        val previousProxy = macLease?.previousProxyMap()
         store.clearWorkerReady()
-        store.setRunning(endpoint, caps, previousProxy)
-        // Launch the same native executable as a detached worker. Installers put `lynx` on PATH;
-        // tests and embedders can provide LYNX_EXECUTABLE explicitly.
-        val executable = getenv("LYNX_EXECUTABLE")?.toKString()?.takeIf(String::isNotBlank)
+        store.clearSupervisorReady()
+        store.setRunning(endpoint, caps, previousProxy, workerPid = null, workerStartIdentity = null, supervisorPid = null, captureToken = captureToken, captureId = captureId)
+        try {
+            // Launch the same native executable as a detached worker. Installers put `lynx` on PATH;
+            // tests and embedders can provide LYNX_EXECUTABLE explicitly.
+            val executable = getenv("LYNX_EXECUTABLE")?.toKString()?.takeIf(String::isNotBlank)
             ?: nativeExecutablePath()
             ?: "lynx"
-        PosixProcessRunner().run(listOf("sh", "-c", "(nohup '$executable' network worker $port >/dev/null 2>&1 </dev/null &)"))
-        try {
+            val launch = processes.run(listOf("sh", "-c", "LYNX_CAPTURE_TOKEN='$captureToken' LYNX_CAPTURE_ID='${captureId.orEmpty()}' LYNX_CAPTURE_ENDPOINT='$endpoint' nohup '$executable' network worker $port >/dev/null 2>&1 </dev/null & echo \$!"))
+            val workerPid = launch.stdout.trim().toIntOrNull()
+            ?: error("native network worker did not report a process ID")
+            val workerStartIdentity = processStartIdentity(workerPid)
+            ?: error("native network worker identity could not be verified")
+            val captureLease = captureId?.let { NativeCaptureLease(it, captureToken, endpoint, NativeWorkerIdentity(workerPid, workerStartIdentity)) }
+            store.setRunning(endpoint, caps, previousProxy, workerPid, workerStartIdentity, supervisorPid = null, captureToken = captureToken, captureId = captureId)
+            val preparedMacLease = macLease?.copy(workerPid = workerPid, workerStartIdentity = workerStartIdentity)
+            if (preparedMacLease != null) store.save(preparedMacLease)
             repeat(40) {
-                if (store.workerReady()) {
+                if ((captureLease?.let(store::workerReady) ?: store.workerReady(port)) && workerIdentityIsCurrent() && probeListener(port)) {
+                    val supervisorPid = if (preparedMacLease != null) launchSupervisor(port, captureToken) else null
+                    if (supervisorPid != null && !waitForSupervisor(captureToken, supervisorPid)) {
+                        error("native proxy supervisor did not become ready")
+                    }
+                    val activePreviousProxy = preparedMacLease?.let {
+                        macRecovery.activatePreparedLease(it.copy(supervisorPid = supervisorPid)).previousProxyMap()
+                    } ?: applyDeviceProxy(port, settings.listenHost, captureToken)
                     val running = caps.copy(proxyStatus = "running")
-                    store.setRunning(endpoint, running, previousProxy)
-                    return NetworkCommandResult.Started(endpoint, running)
+                    store.setRunning(endpoint, running, activePreviousProxy, workerPid, workerStartIdentity, supervisorPid, captureToken, captureId)
+                    return NetworkCommandResult.Started(
+                        endpoint = endpoint,
+                        capabilities = running,
+                        sessionId = captureId,
+                        attachmentId = session?.id,
+                        target = session?.let(::captureTarget),
+                    )
                 }
                 usleep(50_000u)
             }
             throw IllegalStateException("native network worker did not become ready; install lynx on PATH or set LYNX_EXECUTABLE")
         } catch (error: Throwable) {
-            runCatching { restoreProxy(previousProxy) }
+            captureId?.let(captures::interrupt)
+            runCatching { restoreDeviceProxy() }
             store.clearRunning()
+            store.clearWorkerReady()
+            store.clearSupervisorReady()
             throw error
         }
     }
 
-    private fun applyDeviceProxy(port: Int, listenHost: String): Map<String, String?>? {
+    private fun captureTarget(session: NativeSession): CaptureTarget = CaptureTarget(
+        platform = if (session.deviceSerial.startsWith("ios-simulator:")) "ios" else "android",
+        deviceId = session.deviceSerial.removePrefix("ios-simulator:"),
+        applicationId = session.packageName,
+    )
+
+    private fun applyDeviceProxy(port: Int, listenHost: String, captureToken: String): Map<String, String?>? {
         val session = sessions.load() ?: return null
         if (session.deviceSerial.startsWith("ios-simulator:")) {
             require(listenHost == "0.0.0.0" || listenHost == "127.0.0.1") {
@@ -75,30 +259,145 @@ class PosixNativeNetworkInspector(
             }
             return macProxy.apply(port)
         }
-        val visibleHost = when {
-            session.deviceSerial.startsWith("emulator-") -> "10.0.2.2"
-            listenHost != "0.0.0.0" -> listenHost
-            else -> error("an explicit reachable --host is required for physical Android devices")
-        }
-        return androidProxy.apply(session.deviceSerial, visibleHost, port)
+        require(androidRelay.available(session.deviceSerial)) { "ANDROID_RELAY_UNAVAILABLE" }
+        val relay = androidRelay.start(session.deviceSerial, session.packageName, session.processId, port, captureId = store.captureId() ?: error("ANDROID_RELAY_CAPTURE_ID_UNAVAILABLE"), captureToken)
+        val previous = androidProxy.apply(session.deviceSerial, "127.0.0.1", relay.relayPort).toMutableMap()
+        previous["controller"] = "android-relay"
+        previous["relayPath"] = relay.remotePath
+        previous["relayPid"] = relay.relayPid
+        previous["relayPort"] = relay.relayPort.toString()
+        previous["relayUpstreamPort"] = relay.upstreamPort.toString()
+        return previous
     }
 
     private fun restoreDeviceProxy() {
-        val previous = store.previousProxy()
-        if (previous?.get("controller") == "macos") {
-            macProxy.restore(previous)
+        if (store.macProxyLease() != null) {
+            macRecovery.restoreOwnedLease()
             return
         }
-        val session = sessions.load() ?: return
-        androidProxy.restore(session.deviceSerial, previous)
+        val previous = store.previousProxy()
+        if (previous?.get("controller") == "macos") {
+            store.save(legacyMacLease(previous))
+            macRecovery.restoreOwnedLease()
+            return
+        }
+        // Android cleanup must never be attempted for an iOS capture. A stale or
+        // partially-written proxy record can otherwise route an iOS UDID through
+        // adb, which reports the opaque `<udid>:features` host-service error.
+        val deviceSerial = androidDeviceForCleanup() ?: return
+        if (previous?.get("controller") == "android-relay") {
+            val relay = NativeAndroidRelayController.Lease(
+                remotePath = previous["relayPath"] ?: return,
+                relayPid = previous["relayPid"] ?: return,
+                relayPort = previous["relayPort"]?.toIntOrNull() ?: return,
+                upstreamPort = previous["relayUpstreamPort"]?.toIntOrNull() ?: return,
+            )
+            androidRelay.stop(deviceSerial, relay)
+        }
+        androidProxy.restore(deviceSerial, previous)
     }
 
     private fun restoreProxy(previous: Map<String, String?>?) {
         if (previous?.get("controller") == "macos") {
             macProxy.restore(previous)
         } else {
-            sessions.load()?.let { androidProxy.restore(it.deviceSerial, previous) }
+            androidDeviceForCleanup()?.let { androidProxy.restore(it, previous) }
         }
+    }
+
+    private fun captureTargetForCleanup(): CaptureTarget? = store.captureId()
+        ?.let(captureRepository::session)
+        ?.target
+
+    private fun androidDeviceForCleanup(): String? {
+        captureTargetForCleanup()?.let { target ->
+            return target.deviceId.takeIf { target.platform.equals("android", ignoreCase = true) }
+        }
+        return sessions.load()?.deviceSerial?.takeUnless { it.startsWith("ios-simulator:") }
+    }
+
+    private fun reconcileRunningState() {
+        if (!store.isRunning()) return
+        if (currentCaptureHealthy()) return
+        store.captureId()?.let(captures::interrupt)
+        restoreDeviceProxy()
+        store.clearRunning()
+        store.clearWorkerReady()
+        store.clearSupervisorReady()
+    }
+
+    private fun currentCaptureHealthy(): Boolean {
+        val endpoint = store.endpoint() ?: return false
+        val port = endpoint.substringAfterLast(':').toIntOrNull() ?: return false
+        val token = store.captureToken() ?: return false
+        val captureId = store.captureId() ?: return false
+        val worker = store.workerIdentity() ?: return false
+        if (!store.workerReady(NativeCaptureLease(captureId, token, endpoint, worker))) return false
+        if (!workerIdentityIsCurrent() || !probeListener(port)) return false
+        val hasMacLease = store.macProxyLease() != null
+        return !hasMacLease || store.supervisorReady(token, store.supervisorPid())
+    }
+
+    private fun workerIdentityIsCurrent(): Boolean = store.workerIdentity()?.let { worker ->
+        processStartIdentity(worker.pid) == worker.startIdentity
+    } == true
+
+    private fun processStartIdentity(pid: Int): String? = processes.run(
+        listOf("ps", "-o", "lstart=", "-p", pid.toString()),
+    ).takeIf { it.exitCode == 0 }?.stdout?.trim()?.takeIf(String::isNotBlank)
+
+    private fun launchSupervisor(port: Int, captureToken: String): Int {
+        val executable = getenv("LYNX_EXECUTABLE")?.toKString()?.takeIf(String::isNotBlank)
+            ?: nativeExecutablePath()
+            ?: "lynx"
+        val launch = processes.run(
+            listOf("sh", "-c", "LYNX_CAPTURE_TOKEN='$captureToken' nohup '$executable' network supervisor $port >/dev/null 2>&1 </dev/null & echo \$!"),
+        )
+        return launch.stdout.trim().toIntOrNull()
+            ?: error("native proxy supervisor did not report a process ID")
+    }
+
+    private fun waitForSupervisor(captureToken: String, supervisorPid: Int): Boolean {
+        repeat(40) {
+            if (store.supervisorReady(captureToken, supervisorPid)) return true
+            usleep(50_000u)
+        }
+        return false
+    }
+
+    private fun probeListener(port: Int): Boolean = runCatching {
+        val fd = connect("127.0.0.1", port)
+        close(fd)
+        true
+    }.getOrDefault(false)
+
+    private fun legacyMacLease(previous: Map<String, String?>): NativeMacProxyLease {
+        val service = previous["service"] ?: error("PROXY_RECOVERY_REQUIRED: legacy macOS proxy state has no service")
+        val endpoint = store.endpoint() ?: error("PROXY_RECOVERY_REQUIRED: legacy macOS proxy state has no endpoint")
+        val port = endpoint.substringAfterLast(':').toIntOrNull()
+            ?: error("PROXY_RECOVERY_REQUIRED: legacy macOS proxy state has invalid endpoint $endpoint")
+        fun setting(kind: String) = NativeMacProxySetting(
+            enabled = when (previous["${kind}Enabled"]) {
+                "Yes" -> true
+                "No" -> false
+                else -> error("PROXY_RECOVERY_REQUIRED: legacy macOS proxy state lacks ${kind}Enabled")
+            },
+            server = previous["${kind}Server"],
+            port = previous["${kind}Port"],
+        )
+        val installed = NativeMacProxySetting(enabled = true, server = "127.0.0.1", port = port.toString())
+        return NativeMacProxyLease(
+            leaseId = "legacy_${randomId()}",
+            service = service,
+            endpoint = endpoint,
+            webOriginal = setting("web"),
+            secureOriginal = setting("secure"),
+            webInstalled = installed,
+            secureInstalled = installed,
+            phase = NativeMacProxyLeasePhase.ACTIVE,
+            webApplied = true,
+            secureApplied = true,
+        )
     }
 
     /** Worker entrypoint. It accepts cleartext HTTP proxy requests and appends complete exchanges. */
@@ -117,16 +416,45 @@ class PosixNativeNetworkInspector(
             require(listen(server, 64) == 0) { "unable to listen on native proxy" }
             fcntl(server, F_SETFL, fcntl(server, F_GETFL) or O_NONBLOCK)
         }
-        store.markWorkerReady(port)
+        val captureToken = getenv("LYNX_CAPTURE_TOKEN")?.toKString()?.takeIf(String::isNotBlank)
+        val captureId = getenv("LYNX_CAPTURE_ID")?.toKString()?.takeIf(String::isNotBlank)
+        val endpoint = getenv("LYNX_CAPTURE_ENDPOINT")?.toKString()?.takeIf(String::isNotBlank)
+        val workerStartIdentity = processStartIdentity(getpid())
+        if (captureToken != null && captureId != null && endpoint != null && workerStartIdentity != null) {
+            store.markWorkerReady(NativeCaptureLease(captureId, captureToken, endpoint, NativeWorkerIdentity(getpid(), workerStartIdentity)))
+        } else store.markWorkerReady(port)
         try {
             while (store.isRunning()) {
                 val client = accept(server, null, null)
                 if (client >= 0) clientDispatcher.dispatch { handle(client) } else usleep(50_000u)
             }
         } finally {
+            runCatching { restoreDeviceProxy() }
             store.clearWorkerReady()
             close(server)
         }
+    }
+
+    fun supervisor(port: Int) {
+        val token = getenv("LYNX_CAPTURE_TOKEN")?.toKString()?.takeIf(String::isNotBlank) ?: return
+        val worker = store.workerIdentity() ?: return
+        val captureId = store.captureId() ?: return
+        val endpoint = store.endpoint() ?: return
+        if (!store.workerReady(NativeCaptureLease(captureId, token, endpoint, worker))) return
+        val monitor = NativeMacProxyWorkerSupervisor(
+            worker = worker,
+            identityForPid = ::processStartIdentity,
+            listenerHealthy = { probeListener(port) },
+            restoreOwnedProxy = { restoreDeviceProxy() },
+            clearRuntime = {
+                store.clearRunning()
+                store.clearWorkerReady()
+                store.clearSupervisorReady()
+            },
+        )
+        if (!monitor.checkOnce()) return
+        store.markSupervisorReady(token, getpid())
+        while (store.isRunning() && monitor.checkOnce()) usleep(100_000u)
     }
 
     private fun handle(client: Int) {
@@ -134,12 +462,32 @@ class PosixNativeNetworkInspector(
         // sockets must be blocking for TLS handshakes and complete bodies.
         fcntl(client, F_SETFL, fcntl(client, F_GETFL) and O_NONBLOCK.inv())
         val started = getTimeMillis()
+        var admissionDecision: ConnectionAdmission.Decision? = null
+        var relayPrefaceSeen = false
+        var verifiedOrigin: VerifiedOrigin? = null
         try {
-            val raw = readHeaders(client)
+            val relayPrefix = readRelayPreface(client) {
+                relayPrefaceSeen = true
+                val attached = sessions.load() ?: error("relay metadata has no attached session")
+                verifiedOrigin = VerifiedOrigin(
+                    target = captureTarget(attached),
+                    process = ProcessIdentity(attached.processId, "android-relay:${attached.processId}"),
+                    method = it.method,
+                )
+            }
+            admissionDecision = admission(client)
+            if (admissionDecision is ConnectionAdmission.Decision.Intercept) {
+                verifiedOrigin = admissionDecision.origin
+            }
+            val raw = readHeaders(client, relayPrefix)
             val request = NativeHttpParser.parseRequest(raw)
+            if (admissionDecision is ConnectionAdmission.Decision.PassThrough) {
+                forwardWithoutRecording(client, request, raw)
+                return
+            }
             val requestId = RequestId("req_${randomId()}")
             if (request.method.equals("CONNECT", true)) {
-                handleConnect(client, request.url, requestId, started)
+                handleConnect(client, request.url, requestId, started, verifiedOrigin)
                 return
             }
             val target = parseTarget(request.url, request.headers["Host"] ?: request.headers["host"])
@@ -152,7 +500,7 @@ class PosixNativeNetworkInspector(
                 val responseHeadValue = NativeHttpParser.parseResponse(responseHead)
                 if (responseHeadValue.status == 101 && responseHeadValue.headers.keys.any { it.equals("Upgrade", true) }) {
                     sendBytes(client, responseHead.encodeToByteArray())
-                    relayPlainWebSocket(client, upstream, request, requestId, responseHeadValue, started)
+                    relayPlainWebSocket(client, upstream, request, requestId, responseHeadValue, started, verifiedOrigin)
                     return
                 }
                 val responseBody = readUntilClose(upstream)
@@ -162,37 +510,73 @@ class PosixNativeNetworkInspector(
                         responseHeadValue.headers.mapValues { it.value.joinToString(", ") }, responseBody,
                     ).decodeToString(),
                 )
-                store.append(exchange(request, requestId, response, null, started))
+                appendTarget(exchange(request, requestId, response, null, started), verifiedOrigin)
             } finally { close(upstream) }
         } catch (t: Throwable) {
-            // Keep failures visible to an agent; malformed/failed requests are evidence too.
-            runCatching { store.append(failureExchange(client, started, t.message ?: t::class.simpleName.orEmpty())) }
+            // Foreign/unknown iOS connections are deliberately opaque. Never retain their
+            // parse/TLS failures as if they belonged to the attached app.
+            if (!relayPrefaceSeen && admissionDecision !is ConnectionAdmission.Decision.PassThrough) {
+                runCatching { store.append(failureExchange(client, started, t.message ?: t::class.simpleName.orEmpty())) }
+            }
         } finally { close(client) }
     }
 
-    private fun handleConnect(client: Int, authority: String, requestId: RequestId, started: Long) {
+    private fun admission(client: Int): ConnectionAdmission.Decision? {
+        val session = sessions.load() ?: return null
+        if (!session.deviceSerial.startsWith("ios-simulator:")) return null
+        val tuple = nativeAcceptedSocketTuple(client)
+            ?: return ConnectionAdmission.Decision.PassThrough("accepted socket tuple unavailable")
+        val target = CaptureTarget("ios", session.deviceSerial.removePrefix("ios-simulator:"), session.packageName)
+        return ConnectionAdmission(ownerResolver ?: return ConnectionAdmission.Decision.PassThrough("ownership resolver unavailable"))
+            .decide(target, tuple)
+    }
+
+    private fun forwardWithoutRecording(client: Int, request: NativeHttpParser.Request, raw: String) {
+        if (request.method.equals("CONNECT", true)) {
+            val host = request.url.substringBeforeLast(':').ifBlank { request.url }
+            val port = request.url.substringAfterLast(':', "443").toIntOrNull() ?: 443
+            val upstream = connect(host, port)
+            try {
+                sendBytes(client, "HTTP/1.1 200 Connection Established\r\nProxy-Agent: lynx\r\n\r\n".encodeToByteArray())
+                relayOpaque(client, upstream)
+            } finally { close(upstream) }
+            return
+        }
+        val target = parseTarget(request.url, request.headers["Host"] ?: request.headers["host"])
+        val upstream = connect(target.first, target.second)
+        try {
+            sendBytes(upstream, NativeHttpParser.originFormRequest(raw, request).encodeToByteArray())
+            sendBytes(client, readHeaders(upstream).encodeToByteArray() + readUntilClose(upstream))
+        } finally { close(upstream) }
+    }
+
+    private fun handleConnect(client: Int, authority: String, requestId: RequestId, started: Long, origin: VerifiedOrigin?) {
         val host = authority.substringBeforeLast(':').ifBlank { authority }
         val port = authority.substringAfterLast(':', "443").toIntOrNull() ?: 443
         try {
             sendBytes(client, "HTTP/1.1 200 Connection Established\r\nProxy-Agent: lynx\r\n\r\n".encodeToByteArray())
-            val leaf = certificates.ensureLeaf(host)
+            val leaf = try { certificates.ensureLeaf(host) } catch (error: Throwable) {
+                throw NativeTlsFailure("CA_LEAF_SIGN_FAILED", error)
+            }
             val tlsProvider = nativeTlsProvider()
             // Negotiate with the origin first. A downstream client may prefer h2 even when the
             // origin is HTTP/1.1-only; choose the downstream ALPN based on the origin so we never
             // advertise h2 to the app and then fail the upstream handshake.
-            val upstreamFd = connect(host, port)
+            val upstreamFd = try { connect(host, port) } catch (error: Throwable) {
+                throw NativeTlsFailure("TLS_UPSTREAM_FAILED", error)
+            }
             var upstream = try {
                 tlsProvider.client(upstreamFd, host, enableHttp2 = true)
             } catch (error: Throwable) {
                 close(upstreamFd)
-                throw error
+                throw NativeTlsFailure("TLS_UPSTREAM_FAILED", error)
             }
             val upstreamUsesHttp2 = upstream.applicationProtocol == "h2"
             val downstream = try {
                 tlsProvider.server(client, leaf.certificate, leaf.privateKey, enableHttp2 = upstreamUsesHttp2)
             } catch (error: Throwable) {
                 upstream.close()
-                throw error
+                throw NativeTlsFailure("TLS_CLIENT_REJECTED_CERTIFICATE", error)
             }
             var upstreamClosed = false
             try {
@@ -204,12 +588,14 @@ class PosixNativeNetworkInspector(
                     // preserved end-to-end instead of relaying an incompatible h2 TLS session.
                     upstream.close()
                     upstreamClosed = true
-                    val http1Fd = connect(host, port)
+                    val http1Fd = try { connect(host, port) } catch (error: Throwable) {
+                        throw NativeTlsFailure("TLS_UPSTREAM_FAILED", error)
+                    }
                     upstream = try {
                         tlsProvider.client(http1Fd, host, enableHttp2 = false)
                     } catch (error: Throwable) {
                         close(http1Fd)
-                        throw error
+                        throw NativeTlsFailure("TLS_UPSTREAM_FAILED", error)
                     }
                     upstreamClosed = false
                     negotiatedUpstreamUsesHttp2 = upstream.applicationProtocol == "h2"
@@ -219,7 +605,7 @@ class PosixNativeNetworkInspector(
                         "origin negotiated ${upstream.applicationProtocol ?: "HTTP/1.1"}"
                 }
                 if (downstreamUsesHttp2) {
-                    relayTlsHttp2(downstream, upstream, host, requestId, started)
+                    relayTlsHttp2(downstream, upstream, host, requestId, started, origin)
                     return
                 }
                 val downstreamReader = NativeTlsBufferedReader(downstream)
@@ -252,7 +638,7 @@ class PosixNativeNetworkInspector(
                     downstream.write(responseHead.encodeToByteArray())
                     relayTlsWebSocket(
                         downstream, upstream, downstreamReader, upstreamReader,
-                        observedRequest, requestId, response.copy(body = ""), started,
+                        observedRequest, requestId, response.copy(body = ""), started, origin,
                     )
                 } else {
                     val responseBody = upstreamReader.readUntilClose()
@@ -260,14 +646,14 @@ class PosixNativeNetworkInspector(
                     val capturedBody = NativeHttpBodyDecoder.decode(
                         response.headers.mapValues { it.value.joinToString(", ") }, responseBody,
                     ).decodeToString()
-                    store.append(exchange(observedRequest, requestId, response.copy(body = capturedBody), null, started))
+                    appendTarget(exchange(observedRequest, requestId, response.copy(body = capturedBody), null, started), origin)
                 }
             } finally {
                 if (!upstreamClosed) upstream.close()
                 downstream.close()
             }
         } catch (t: Throwable) {
-            store.append(NetworkExchange(nativeNetworkEvidenceMeta(EvidenceId("ev_${randomId()}"), sessions.load()), requestId, NetworkRequest("CONNECT", "https://$host", emptyMap(), null), null, NetworkFailure("HTTPS_MITM_ERROR", t.message), NetworkTiming(started, getTimeMillis(), getTimeMillis() - started), NetworkCaptureMetadata(false, 0, false), protocol = "HTTPS"))
+            appendTarget(NetworkExchange(nativeNetworkEvidenceMeta(EvidenceId("ev_${randomId()}"), sessions.load()), requestId, NetworkRequest("CONNECT", "https://$host", emptyMap(), null), null, NetworkFailure(nativeTlsFailureKind(t), t.message), NetworkTiming(started, getTimeMillis(), getTimeMillis() - started), NetworkCaptureMetadata(false, 0, false), protocol = "HTTPS"), origin)
         }
     }
 
@@ -280,6 +666,7 @@ class PosixNativeNetworkInspector(
         host: String,
         connectId: RequestId,
         started: Long,
+        origin: VerifiedOrigin?,
     ) {
         val requests = mutableMapOf<Int, H2Request>()
         val responses = mutableMapOf<Int, NativeHttp2Decoder.Exchange>()
@@ -306,7 +693,7 @@ class PosixNativeNetworkInspector(
                             downstreamOpen = false
                         } else {
                             upstream.write(bytes)
-                            decodeHttp2(requestDecoder, bytes, host, connectId, started).forEach { decoded ->
+                            decodeHttp2(requestDecoder, bytes, host, connectId, started, origin).forEach { decoded ->
                                 requests[decoded.streamId] = H2Request(
                                     requestId = RequestId("req_${randomId()}_${decoded.streamId}"),
                                     exchange = decoded,
@@ -320,12 +707,12 @@ class PosixNativeNetworkInspector(
                             upstreamOpen = false
                         } else {
                             downstream.write(bytes)
-                            decodeHttp2(responseDecoder, bytes, host, connectId, started).forEach { decoded ->
+                            decodeHttp2(responseDecoder, bytes, host, connectId, started, origin).forEach { decoded ->
                                 responses[decoded.streamId] = decoded
                             }
                         }
                     }
-                    flushHttp2Exchanges(requests, responses, host, connectId, started)
+                    flushHttp2Exchanges(requests, responses, host, connectId, started, origin)
                 }
             }
         } finally {
@@ -334,11 +721,11 @@ class PosixNativeNetworkInspector(
             // Preserve one-sided failures instead of silently dropping streams when a peer closes.
             requests.values.forEach { pending ->
                 if (responses.remove(pending.exchange.streamId) == null) {
-                    store.append(http2Exchange(pending, null, host, connectId, started, NetworkFailure("HTTP2_INCOMPLETE", "response stream closed before END_STREAM")))
+                    appendTarget(http2Exchange(pending, null, host, connectId, started, NetworkFailure("HTTP2_INCOMPLETE", "response stream closed before END_STREAM")), origin)
                 }
             }
             responses.values.forEach { response ->
-                store.append(http2Exchange(null, response, host, connectId, started, NetworkFailure("HTTP2_INCOMPLETE", "request stream closed before END_STREAM")))
+                    appendTarget(http2Exchange(null, response, host, connectId, started, NetworkFailure("HTTP2_INCOMPLETE", "request stream closed before END_STREAM")), origin)
             }
         }
     }
@@ -351,10 +738,11 @@ class PosixNativeNetworkInspector(
         host: String,
         connectId: RequestId,
         started: Long,
+        origin: VerifiedOrigin?,
     ): List<NativeHttp2Decoder.Exchange> = try {
         decoder.feed(bytes)
     } catch (t: Throwable) {
-        store.append(http2Exchange(null, null, host, connectId, started, NetworkFailure("HTTP2_DECODER_ERROR", t.message ?: t::class.simpleName)))
+        appendTarget(http2Exchange(null, null, host, connectId, started, NetworkFailure("HTTP2_DECODER_ERROR", t.message ?: t::class.simpleName)), origin)
         emptyList()
     }
 
@@ -364,12 +752,13 @@ class PosixNativeNetworkInspector(
         host: String,
         connectId: RequestId,
         started: Long,
+        origin: VerifiedOrigin?,
     ) {
         val complete = requests.keys.intersect(responses.keys).toList()
         complete.forEach { streamId ->
             val request = requests.remove(streamId) ?: return@forEach
             val response = responses.remove(streamId) ?: return@forEach
-            store.append(http2Exchange(request, response, host, connectId, started, null))
+            appendTarget(http2Exchange(request, response, host, connectId, started, null), origin)
         }
     }
 
@@ -408,6 +797,19 @@ class PosixNativeNetworkInspector(
         )
     }
 
+    private fun appendTarget(exchange: NetworkExchange, origin: VerifiedOrigin?) {
+        store.append(exchange)
+        val captureId = store.captureId() ?: return
+        if (origin != null) {
+            captureRepository.append(
+                VerifiedExchange(
+                    context = ConnectionContext(captureId, exchange.requestId.value, origin, exchange.timing.startedAtEpochMillis),
+                    exchange = exchange,
+                ),
+            )
+        }
+    }
+
     private fun exchange(request: NativeHttpParser.Request, id: RequestId, response: NativeHttpParser.Response?, failure: NetworkFailure?, started: Long) = NetworkExchange(
         meta = nativeNetworkEvidenceMeta(EvidenceId("ev_${randomId()}"), sessions.load()),
         requestId = id,
@@ -433,14 +835,84 @@ class PosixNativeNetworkInspector(
         val targetHost = parts[0].takeUnless { it == "10.0.2.2" } ?: "127.0.0.1"
         return targetHost to (parts.getOrNull(1)?.toIntOrNull() ?: 80)
     }
-    private fun connect(host: String, port: Int): Int = memScoped { val hints = alloc<addrinfo>(); hints.ai_family = AF_UNSPEC; hints.ai_socktype = SOCK_STREAM; val result = allocPointerTo<addrinfo>(); require(getaddrinfo(host, port.toString(), hints.ptr, result.ptr) == 0); val info = result.value ?: error("unable to resolve $host"); val fd = socket(info.pointed.ai_family, info.pointed.ai_socktype, info.pointed.ai_protocol); require(fd >= 0); require(platform.posix.connect(fd, info.pointed.ai_addr, info.pointed.ai_addrlen) == 0); freeaddrinfo(info); fd }
+    private fun connect(host: String, port: Int): Int = memScoped {
+        val hints = alloc<addrinfo>()
+        hints.ai_family = AF_UNSPEC
+        hints.ai_socktype = SOCK_STREAM
+        val result = allocPointerTo<addrinfo>()
+        require(getaddrinfo(host, port.toString(), hints.ptr, result.ptr) == 0) { "unable to resolve $host" }
+        val first = result.value ?: error("unable to resolve $host")
+        var candidate: CPointer<addrinfo>? = first
+        while (candidate != null) {
+            val info = candidate.pointed
+            val fd = socket(info.ai_family, info.ai_socktype, info.ai_protocol)
+            if (fd >= 0) {
+                if (platform.posix.connect(fd, info.ai_addr, info.ai_addrlen) == 0) {
+                    freeaddrinfo(first)
+                    return@memScoped fd
+                }
+                close(fd)
+            }
+            candidate = info.ai_next
+        }
+        freeaddrinfo(first)
+        error("unable to connect to $host:$port")
+    }
     /** Read exactly through the header terminator. A bulk recv can consume the
      * beginning of a TLS ClientHello after CONNECT, so this intentionally reads
      * one byte at a time at the protocol boundary. */
-    private fun readHeaders(fd: Int): String { val bytes = mutableListOf<Byte>(); while (bytes.size < 1024 * 1024) { memScoped { val native = allocArray<ByteVar>(1); val count = recv(fd, native, 1uL, 0); if (count <= 0) return bytes.toByteArray().decodeToString(); bytes += native[0] }; if (bytes.size >= 4 && bytes.takeLast(4).toByteArray().decodeToString() == "\r\n\r\n") break }; return bytes.toByteArray().decodeToString() }
+    private fun readRelayPreface(fd: Int, seen: (AndroidRelayPreface) -> Unit): ByteArray {
+        val prefix = ByteArray(4)
+        val peeked = prefix.usePinned { recv(fd, it.addressOf(0), 4uL, MSG_PEEK) }
+        if (peeked < 4) return ByteArray(0)
+        val length = ((prefix[0].toInt() and 0xff) shl 24) or ((prefix[1].toInt() and 0xff) shl 16) or
+            ((prefix[2].toInt() and 0xff) shl 8) or (prefix[3].toInt() and 0xff)
+        if (length !in 1..64 * 1024) return ByteArray(0)
+        readExactly(fd, 4)?.let { }
+        val raw = readExactly(fd, length) ?: error("relay metadata preface truncated")
+        val preface = Json { ignoreUnknownKeys = false }.decodeFromString(AndroidRelayPreface.serializer(), raw.decodeToString())
+        val session = sessions.load() ?: error("relay metadata has no attached session")
+        require(preface.protocolVersion == 1) { "unsupported relay protocol version" }
+        require(preface.captureId == store.captureId()) { "relay capture ID does not match active capture" }
+        require(preface.captureToken == store.captureToken()) { "relay capture token rejected" }
+        require(preface.deviceSerial == session.deviceSerial && preface.packageName == session.packageName) { "relay target does not match attachment" }
+        require(preface.decision == "verified_target") { "relay connection is not verified target" }
+        seen(preface)
+        return ByteArray(0)
+    }
+    private fun readHeaders(fd: Int, initial: ByteArray = ByteArray(0)): String { val bytes = initial.toMutableList(); while (bytes.size < 1024 * 1024) { if (bytes.size >= 4 && bytes.takeLast(4).toByteArray().decodeToString() == "\r\n\r\n") break; memScoped { val native = allocArray<ByteVar>(1); val count = recv(fd, native, 1uL, 0); if (count <= 0) return bytes.toByteArray().decodeToString(); bytes += native[0] } }; return bytes.toByteArray().decodeToString() }
     private fun readUntilClose(fd: Int): ByteArray { val bytes = mutableListOf<Byte>(); memScoped { val buffer = allocArray<ByteVar>(8192); while (true) { val count = recv(fd, buffer, 8192.convert(), 0); if (count <= 0) break; for (i in 0 until count) bytes += buffer[i] } }; return bytes.toByteArray() }
-    private fun relayPlainWebSocket(client: Int, upstream: Int, request: NativeHttpParser.Request, id: RequestId, response: NativeHttpParser.Response, started: Long) {
+    private fun relayOpaque(left: Int, right: Int) = memScoped {
+        val pollers = allocArray<pollfd>(2)
+        val buffer = allocArray<ByteVar>(16 * 1024)
+        var leftOpen = true
+        var rightOpen = true
+        while (leftOpen || rightOpen) {
+            pollers[0].fd = left; pollers[0].events = POLLIN.toShort(); pollers[0].revents = 0
+            pollers[1].fd = right; pollers[1].events = POLLIN.toShort(); pollers[1].revents = 0
+            if (poll(pollers, 2u, 250) <= 0) continue
+            for (index in 0..1) {
+                if (pollers[index].revents.toInt() and (POLLIN or POLLHUP or POLLERR) == 0) continue
+                val source = if (index == 0) left else right
+                val destination = if (index == 0) right else left
+                val count = recv(source, buffer, 16_384u, 0)
+                if (count <= 0) {
+                    if (index == 0) leftOpen = false else rightOpen = false
+                } else {
+                    var offset = 0
+                    while (offset < count) {
+                        val written = send(destination, buffer + offset, (count - offset).toULong(), 0)
+                        if (written <= 0) { leftOpen = false; rightOpen = false; break }
+                        offset += written.toInt()
+                    }
+                }
+            }
+        }
+    }
+    private fun relayPlainWebSocket(client: Int, upstream: Int, request: NativeHttpParser.Request, id: RequestId, response: NativeHttpParser.Response, started: Long, origin: VerifiedOrigin?) {
         val frames = mutableListOf<NetworkFrame>()
+        fun publish() { appendTarget(exchange(request, id, response, null, started).copy(protocol = "WebSocket", frames = frames.toList()), origin) }
+        publish()
         memScoped {
             val pollers = allocArray<pollfd>(2)
             var openClient = true; var openUpstream = true; val deadline = getTimeMillis() + 15 * 60_000
@@ -450,15 +922,15 @@ class PosixNativeNetworkInspector(
                 if (poll(pollers, 2u, 250) < 0) break
                 if (openClient && pollers[0].revents.toInt() and POLLIN != 0) {
                     val frame = readFrame(client) ?: run { openClient = false; continue }
-                    sendBytes(upstream, frame.wireBytes); frames += frame.evidence("CLIENT_TO_SERVER")
+                    sendBytes(upstream, frame.wireBytes); frames += frame.evidence("CLIENT_TO_SERVER"); publish()
                 }
                 if (openUpstream && pollers[1].revents.toInt() and POLLIN != 0) {
                     val frame = readFrame(upstream) ?: run { openUpstream = false; continue }
-                    sendBytes(client, frame.wireBytes); frames += frame.evidence("SERVER_TO_CLIENT")
+                    sendBytes(client, frame.wireBytes); frames += frame.evidence("SERVER_TO_CLIENT"); publish()
                 }
             }
         }
-        store.append(exchange(request, id, response, null, started).copy(protocol = "WebSocket", frames = frames))
+        publish()
     }
 
     private fun relayTlsWebSocket(
@@ -470,8 +942,11 @@ class PosixNativeNetworkInspector(
         id: RequestId,
         response: NativeHttpParser.Response,
         started: Long,
+        origin: VerifiedOrigin?,
     ) {
         val frames = mutableListOf<NetworkFrame>()
+        fun publish() { appendTarget(exchange(request, id, response, null, started).copy(protocol = "WebSocket", frames = frames.toList()), origin) }
+        publish()
         memScoped {
             val pollers = allocArray<pollfd>(2)
             var downstreamOpen = true
@@ -492,6 +967,7 @@ class PosixNativeNetworkInspector(
                     if (frame == null) downstreamOpen = false else {
                         upstream.write(frame.wireBytes)
                         frames += frame.evidence("CLIENT_TO_SERVER")
+                        publish()
                     }
                 }
                 if (upstreamOpen && (upstreamReady || pollers[1].revents.toInt() and (POLLIN or POLLHUP or POLLERR) != 0)) {
@@ -499,11 +975,12 @@ class PosixNativeNetworkInspector(
                     if (frame == null) upstreamOpen = false else {
                         downstream.write(frame.wireBytes)
                         frames += frame.evidence("SERVER_TO_CLIENT")
+                        publish()
                     }
                 }
             }
         }
-        store.append(exchange(request, id, response, null, started).copy(protocol = "WebSocket", frames = frames))
+        publish()
     }
 
     private fun readFrame(fd: Int): NativeWebSocketFrame? = NativeWebSocketFrameCodec.read { readExactly(fd, it) }

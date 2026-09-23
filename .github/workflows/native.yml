@@ -18,29 +18,19 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - run: HOMEBREW_NO_AUTO_UPDATE=1 brew install openssl@3 libnghttp2 brotli
       - run: ./gradlew test :host:network:jvmTest :core:model:allTests :host:network:macosArm64Test :host:native:macosArm64Test :apps:cli:macosArm64Test :apps:cli:linkReleaseExecutableMacosArm64 --no-daemon
+      - name: Build Android relay helpers
+        run: ./scripts/build-android-relay.sh build/android-relay
       - run: |
-          mkdir -p dist/lynx-skill
-          cp apps/cli/build/bin/macosArm64/releaseExecutable/lynx.kexe dist/lynx
-          SSL_PREFIX="$(brew --prefix openssl@3)"
-          H2_PREFIX="$(brew --prefix libnghttp2)"
-          BROTLI_PREFIX="$(brew --prefix brotli)"
-          cp "$SSL_PREFIX/lib/libssl.3.dylib" "$SSL_PREFIX/lib/libcrypto.3.dylib" dist/
-          cp "$H2_PREFIX/lib/libnghttp2.14.dylib" dist/
-          cp "$BROTLI_PREFIX/lib/libbrotlidec.1.dylib" "$BROTLI_PREFIX/lib/libbrotlicommon.1.dylib" dist/
-          install_name_tool -change "$SSL_PREFIX/lib/libssl.3.dylib" '@rpath/libssl.3.dylib' dist/lynx
-          install_name_tool -change "$SSL_PREFIX/lib/libcrypto.3.dylib" '@rpath/libcrypto.3.dylib' dist/lynx
-          install_name_tool -change "$H2_PREFIX/lib/libnghttp2.14.dylib" '@rpath/libnghttp2.14.dylib' dist/lynx
-          install_name_tool -change "$BROTLI_PREFIX/lib/libbrotlidec.1.dylib" '@rpath/libbrotlidec.1.dylib' dist/lynx
-          install_name_tool -id '@rpath/libbrotlidec.1.dylib' dist/libbrotlidec.1.dylib
-          install_name_tool -id '@rpath/libbrotlicommon.1.dylib' dist/libbrotlicommon.1.dylib
-          install_name_tool -add_rpath '@executable_path' dist/lynx
-          codesign --force --sign - dist/*.dylib dist/lynx
-          cp docs/agent-skill/SKILL.md dist/lynx-skill/SKILL.md
-          tar -czf dist/lynx-macos-arm64.tar.gz -C dist lynx libssl.3.dylib libcrypto.3.dylib libnghttp2.14.dylib libbrotlidec.1.dylib libbrotlicommon.1.dylib lynx-skill
+          ./scripts/package-macos-native.sh \
+            "$PWD/apps/cli/build/bin/macosArm64/releaseExecutable/lynx.kexe" \
+            "$PWD/dist/lynx-macos-arm64.tar.gz" \
+            "$PWD/build/android-relay"
       - uses: actions/upload-artifact@v4
         with:
           name: lynx-macos-arm64
-          path: dist/lynx-macos-arm64.tar.gz
+          path: |
+            dist/lynx-macos-arm64.tar.gz
+            dist/lynx-macos-arm64.tar.gz.sha256
 
   linux-x64:
     runs-on: ubuntu-24.04

@@ -7,6 +7,7 @@ import dev.lynx.model.NetworkCommandResult
 interface NativeNetworkBackend {
     fun execute(command: NetworkCommand): NetworkCommandResult
     fun worker(port: Int)
+    fun supervisor(port: Int) = Unit
 }
 
 expect fun nativeNetworkBackend(): NativeNetworkBackend

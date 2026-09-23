@@ -54,14 +54,16 @@ or copy it into the harness's skill directory; it explains the attach,
 database, JSON, and network-evidence workflow without assuming a particular
 editor or model.
 
-Linux x64 users can substitute `lynx-linux-x64.tar.gz` in the download URL.
-The host must have Android SDK platform-tools (`adb`) on `PATH` for Android
-inspection.
+Linux x64 packaging is available for maintainer/runtime smoke work, but remains
+unverified and unpublished for app-scoped device capture 🚧.
+Lynx discovers Android SDK platform-tools from SDK configuration, standard
+locations, or `PATH`; use `lynx doctor --json` for exact diagnostics.
 
 Attach to a debuggable app and inspect its database:
 
 ```bash
 lynx devices
+lynx doctor --json
 lynx attach emulator-5554 dev.lynx.dummyapp
 lynx status
 lynx db list --platform android --device emulator-5554 \
@@ -85,14 +87,16 @@ independent invocations:
 
 ```bash
 lynx network start --json
-lynx network list --json
+lynx network list --json                 # session catalog
+lynx network snapshot --json             # active session, finite view
+lynx network list --session <session_id> --json
 lynx network doctor --json
 lynx network stop --json
 ```
 
 The first run creates a CA at `$HOME/.lynx/certs/daemon.pem`; install it in the
-debuggable app/device trust store for HTTPS. Native HTTP/2 capture is included;
-TLS-WebSocket and QUIC/HTTP3 remain under construction 🚧.
+debuggable app/device trust store for HTTPS. Native HTTP/2 and TLS-WebSocket
+capture are included; QUIC/HTTP3 remains under construction 🚧.
 
 Manage the native CA material without a JVM:
 
@@ -215,7 +219,7 @@ not part of the current working CLI:
 - `lynx network watch --jsonl` continuous streaming mode.
 - `lynx db snapshots ...` snapshot history listing.
 - `lynx db diff ...` and `lynx db watch ...`.
-- TUI views, persistent evidence export/import, and JVMTI attribution.
+- TUI views, persistent evidence export/import, and optional JVMTI enrichment.
 - physical iOS capture and complete simulator transport parity; simulator
   attach/database and host-proxy capture are available, with localhost/bypass
   cases 🚧 under construction.

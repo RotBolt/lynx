@@ -25,6 +25,20 @@ private data class RuntimeState(
     val endpoint: String,
     val capabilities: NetworkCapabilities,
     val previousProxy: Map<String, String?>? = null,
+    val workerPid: Int? = null,
+    val workerStartIdentity: String? = null,
+    val supervisorPid: Int? = null,
+    val captureToken: String? = null,
+    val captureId: String? = null,
+)
+
+@Serializable
+private data class WorkerReadiness(
+    val captureId: String,
+    val captureToken: String,
+    val endpoint: String,
+    val workerPid: Int,
+    val workerStartIdentity: String,
 )
 
 /** JSONL evidence store. Files are intentionally plain and portable across native processes. */
@@ -32,18 +46,46 @@ private data class RuntimeState(
 class PosixNativeNetworkStateStore(
     private val root: String = (getenv("HOME")?.toKString()?.takeIf(String::isNotBlank) ?: "/tmp") + "/.lynx/native-network",
     private val json: Json = Json { ignoreUnknownKeys = true; encodeDefaults = true },
-) : NativeNetworkStateStore {
+) : NativeNetworkStateStore, NativeMacProxyLeaseStore {
     private val statePath get() = "$root/state.json"
+    private val macProxyLeasePath get() = "$root/mac-proxy-lease.json"
     private val evidencePath get() = "$root/exchanges.jsonl"
     private val readyPath get() = "$root/worker.ready"
+    private val supervisorReadyPath get() = "$root/supervisor.ready"
 
     override fun isRunning(): Boolean = readState() != null
     override fun endpoint(): String? = readState()?.endpoint
     override fun capabilities(): NetworkCapabilities? = readState()?.capabilities
+    fun workerPid(): Int? = readState()?.workerPid
+    fun workerIdentity(): NativeWorkerIdentity? = readState()?.let { state ->
+        state.workerPid?.let { pid -> state.workerStartIdentity?.let { NativeWorkerIdentity(pid, it) } }
+    }
+    fun supervisorPid(): Int? = readState()?.supervisorPid
+    fun captureToken(): String? = readState()?.captureToken
+    fun captureId(): String? = readState()?.captureId
 
     override fun setRunning(endpoint: String, capabilities: NetworkCapabilities, previousProxy: Map<String, String?>?) {
+        setRunning(endpoint, capabilities, previousProxy, workerPid = null, workerStartIdentity = null, supervisorPid = null, captureToken = null)
+    }
+
+    fun setRunning(
+        endpoint: String,
+        capabilities: NetworkCapabilities,
+        previousProxy: Map<String, String?>?,
+        workerPid: Int?,
+        workerStartIdentity: String?,
+        supervisorPid: Int?,
+        captureToken: String?,
+        captureId: String? = null,
+    ) {
         ensureRoot()
-        writeText(statePath, json.encodeToString(RuntimeState.serializer(), RuntimeState(endpoint, capabilities, previousProxy)))
+        writeText(
+            statePath,
+            json.encodeToString(
+                RuntimeState.serializer(),
+                RuntimeState(endpoint, capabilities, previousProxy, workerPid, workerStartIdentity, supervisorPid, captureToken, captureId),
+            ),
+        )
     }
     override fun previousProxy(): Map<String, String?>? = readState()?.previousProxy
 
@@ -55,9 +97,59 @@ class PosixNativeNetworkStateStore(
         writeText(readyPath, "$port\n")
     }
 
+    fun markWorkerReady(port: Int, captureToken: String, workerPid: Int) {
+        ensureRoot()
+        writeText(readyPath, "$port $captureToken $workerPid\n")
+    }
+
+    fun markWorkerReady(lease: NativeCaptureLease) {
+        ensureRoot()
+        writeText(readyPath, json.encodeToString(WorkerReadiness.serializer(), WorkerReadiness(
+            lease.captureId, lease.captureToken, lease.endpoint, lease.worker.pid, lease.worker.startIdentity,
+        )))
+    }
+
     fun workerReady(): Boolean = readText(readyPath)?.trim()?.isNotEmpty() == true
+    fun workerReady(port: Int): Boolean = readText(readyPath)?.trim() == port.toString()
+    /** Legacy token/PID acknowledgements cannot prove ownership of a capture. */
+    fun workerReady(port: Int, captureToken: String, workerPid: Int?): Boolean = false
+
+    fun workerReady(lease: NativeCaptureLease): Boolean = readText(readyPath)?.trim()?.takeIf(String::isNotEmpty)?.let { raw ->
+        runCatching { json.decodeFromString(WorkerReadiness.serializer(), raw) }.getOrNull()
+    }?.let { ready ->
+        ready.captureId == lease.captureId && ready.captureToken == lease.captureToken &&
+            ready.endpoint == lease.endpoint && ready.workerPid == lease.worker.pid &&
+            ready.workerStartIdentity == lease.worker.startIdentity
+    } == true
 
     fun clearWorkerReady() { remove(readyPath) }
+
+    fun markSupervisorReady(captureToken: String, supervisorPid: Int) {
+        ensureRoot()
+        writeText(supervisorReadyPath, "$captureToken $supervisorPid\n")
+    }
+
+    fun supervisorReady(captureToken: String, supervisorPid: Int?): Boolean {
+        val parts = readText(supervisorReadyPath)?.trim()?.split(Regex("\\s+")) ?: return false
+        if (parts.size != 2 || parts[0] != captureToken) return false
+        val readyPid = parts[1].toIntOrNull() ?: return false
+        return supervisorPid == null || readyPid == supervisorPid
+    }
+
+    fun clearSupervisorReady() { remove(supervisorReadyPath) }
+
+    override fun load(): NativeMacProxyLease? = macProxyLease()
+
+    fun macProxyLease(): NativeMacProxyLease? = readText(macProxyLeasePath)?.trim()?.takeIf(String::isNotEmpty)?.let {
+        runCatching { json.decodeFromString(NativeMacProxyLease.serializer(), it) }.getOrNull()
+    }
+
+    override fun save(lease: NativeMacProxyLease) {
+        ensureRoot()
+        writeText(macProxyLeasePath, json.encodeToString(NativeMacProxyLease.serializer(), lease))
+    }
+
+    override fun clear() { remove(macProxyLeasePath) }
 
     override fun append(exchange: NetworkExchange) {
         ensureRoot()
@@ -75,7 +167,12 @@ class PosixNativeNetworkStateStore(
                     (urlSubstring == null || exchange.request.url.contains(urlSubstring, ignoreCase = true)) &&
                     (sinceEpochMillis == null || exchange.timing.startedAtEpochMillis >= sinceEpochMillis)
             }
-        return filter.limit?.let { values.takeLast(it) } ?: values
+        // WebSocket exchanges are published incrementally with the same request ID. Present
+        // one materialized exchange (the newest frame prefix) to independent CLI readers.
+        val latest = LinkedHashMap<RequestId, NetworkExchange>()
+        values.forEach { latest[it.requestId] = it }
+        val materialized = latest.values.toList()
+        return filter.limit?.let { materialized.takeLast(it) } ?: materialized
     }
 
     override fun get(requestId: RequestId): NetworkExchange? = list().lastOrNull { it.requestId == requestId }

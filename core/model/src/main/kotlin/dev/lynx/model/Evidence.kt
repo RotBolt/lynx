@@ -1,6 +1,7 @@
 package dev.lynx.model
 
 import kotlinx.datetime.Instant
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -84,6 +85,11 @@ data class NetworkExchange(
     val capture: NetworkCaptureMetadata,
     val protocol: String? = null,
     val frames: List<NetworkFrame> = emptyList(),
+    /** Populated only by schema-v2 scoped capture reads. */
+    @SerialName("capture_session_id")
+    val captureSessionId: String? = null,
+    val sequence: Long? = null,
+    val attribution: NetworkAttribution? = null,
 ) : Evidence
 
 data class DatabaseFingerprint(val value: String, val files: List<String>)

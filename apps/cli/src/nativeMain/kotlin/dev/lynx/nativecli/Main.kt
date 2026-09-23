@@ -6,37 +6,58 @@ import dev.lynx.network.NativeNetworkBackend
 import dev.lynx.network.nativeNetworkBackend
 import dev.lynx.model.DatabaseId
 import dev.lynx.model.NetworkCommand
-import dev.lynx.model.NetworkCaptureSettings
-import dev.lynx.model.NetworkFilter
-import dev.lynx.model.RequestId
 import kotlinx.serialization.json.*
 
 expect fun nativeProcessRunner(): NativeProcessRunner
+expect fun nativeHostToolResolver(): dev.lynx.nativehost.HostToolResolver
 expect fun nativeSessionStore(): dev.lynx.nativehost.NativeSessionStore
 expect fun nativeCertificateManager(): dev.lynx.nativehost.NativeCertificateManager
 
 fun main(args: Array<String>) {
-    NativeCli(nativeProcessRunner(), nativeNetworkBackend()).run(args.toList())
+    val runner = nativeProcessRunner()
+    val tools = nativeHostToolResolver()
+    NativeCli(
+        runner, nativeNetworkBackend(), tools,
+        inventory = {
+            dev.lynx.nativehost.DeviceInventoryService(
+                listOf(dev.lynx.nativehost.AndroidDeviceProvider(runner), dev.lynx.nativehost.IosSimulatorDeviceProvider(runner, tools)),
+                tools, nativeSessionStore().load(),
+            ).discover()
+        },
+    ).run(args.toList())
 }
 
-class NativeCli(private val runner: NativeProcessRunner, private val network: NativeNetworkBackend) {
+class NativeCli(
+    private val runner: NativeProcessRunner,
+    private val network: NativeNetworkBackend,
+    private val tools: dev.lynx.nativehost.HostToolResolver = dev.lynx.nativehost.HostToolResolver { dev.lynx.nativehost.ResolvedTool(it, dev.lynx.nativehost.ToolStatus.MISSING, null, null, "tool resolver unavailable") },
+    private val inventory: () -> dev.lynx.nativehost.DeviceInventory = { dev.lynx.nativehost.DeviceInventory(emptyList(), emptyList(), emptyList()) },
+) {
     private val json = Json { encodeDefaults = true; prettyPrint = false }
     private val sessions = dev.lynx.nativehost.NativeSessionManager(runner, nativeSessionStore()) { "session_${kotlin.time.Clock.System.now().toEpochMilliseconds()}" }
 
     fun run(args: List<String>) {
         when (args.firstOrNull()) {
             "--version", "version" -> println("lynx 0.1.0-SNAPSHOT")
-            "devices" -> printResult(runner.run(listOf("adb", "devices")))
+            "devices" -> println(HostDiagnosticsCommands(tools, inventory).devices("--json" in args, option(args, "--platform")))
+            "doctor" -> println(HostDiagnosticsCommands(tools, inventory).doctor("--json" in args))
             "attach" -> {
                 val device = args.getOrNull(1) ?: error("device is required")
                 val packageName = args.getOrNull(2) ?: error("package is required")
                 println(sessions.attach(device, packageName))
             }
             "status" -> println(sessions.status())
-            "detach" -> println(sessions.detach())
+            "detach" -> {
+                val cleanupError = runCatching { network.execute(NetworkCommand.Stop) }.exceptionOrNull()
+                if (cleanupError != null) {
+                    println("ERROR NETWORK_CLEANUP_FAILED ${cleanupError.message ?: cleanupError::class.simpleName}")
+                    return
+                }
+                println(sessions.detach())
+            }
             "db" -> runDatabase(args.drop(1))
             "network" -> runNetwork(args.drop(1))
-            else -> println("Usage: lynx [--version|devices|db ...|network start|stop|list|get|doctor]")
+            else -> println("Usage: lynx [--version|doctor|devices|db ...|network start|stop|list|get]")
         }
     }
 
@@ -52,20 +73,52 @@ class NativeCli(private val runner: NativeProcessRunner, private val network: Na
             println(json.encodeToString(state))
             return
         }
-        val command = when (args.firstOrNull()) {
-            "start" -> NetworkCommand.Start(NetworkCaptureSettings(listenHost = option(args, "--host") ?: "0.0.0.0", listenPort = option(args, "--port")?.toIntOrNull() ?: 0))
-            "stop" -> NetworkCommand.Stop
-            "list" -> NetworkCommand.List(NetworkFilter(method = option(args, "--method"), status = option(args, "--status")?.toIntOrNull(), urlSubstring = option(args, "--url"), limit = option(args, "--limit")?.toIntOrNull()))
-            "get" -> NetworkCommand.Get(RequestId(args.getOrNull(1) ?: error("request id is required")))
-            "doctor" -> NetworkCommand.Doctor
-            "worker" -> { networkWorker(option(args, "--port")?.toIntOrNull() ?: args.getOrNull(1)?.toIntOrNull() ?: error("port is required")); return }
-            else -> error("Usage: lynx network [start|stop|list|get|doctor]")
+        runCatching {
+            val command = when (args.firstOrNull()) {
+                "worker" -> { networkWorker(option(args, "--port")?.toIntOrNull() ?: args.getOrNull(1)?.toIntOrNull() ?: error("port is required")); return }
+                "supervisor" -> { networkSupervisor(option(args, "--port")?.toIntOrNull() ?: args.getOrNull(1)?.toIntOrNull() ?: error("port is required")); return }
+                else -> NetworkInspectionCommands.parse(args)
+            }
+            network.execute(command)
         }
-        println(json.encodeToString(normalizeNetworkJson(json.encodeToJsonElement(network.execute(command)))))
+            .onSuccess { result -> println(networkEnvelope(normalizeNetworkJson(json.encodeToJsonElement(result)))) }
+            .onFailure { error -> println(networkError(error)) }
+    }
+
+    private fun networkEnvelope(element: JsonElement): JsonObject = buildJsonObject {
+        put("protocol_version", 1)
+        put("schema_version", "lynx.v2")
+        element.jsonObject.forEach { (key, value) -> put(key, value) }
+    }
+
+    private fun networkError(error: Throwable): String {
+        val message = error.message ?: error::class.simpleName.orEmpty()
+        val code = when {
+            message.startsWith("NO_ACTIVE_CAPTURE") -> "NO_ACTIVE_CAPTURE"
+            message.startsWith("CAPTURE_SESSION_NOT_FOUND") -> "CAPTURE_SESSION_NOT_FOUND"
+            message.startsWith("CAPTURE_TARGET_MISMATCH") -> "CAPTURE_TARGET_MISMATCH"
+            message.startsWith("CAPTURE_ACTIVE") -> "CAPTURE_ACTIVE"
+            message.startsWith("ANDROID_RELAY_UNAVAILABLE") -> "ANDROID_RELAY_UNAVAILABLE"
+            message.startsWith("SESSION_REQUIRED") -> "SESSION_REQUIRED"
+            else -> "NETWORK_ERROR"
+        }
+        return json.encodeToString(buildJsonObject {
+            put("protocol_version", 1)
+            put("schema_version", "lynx.v2")
+            put("type", "error")
+            put("code", code)
+            put("message", message)
+            put("operation", "NETWORK")
+            put("retryable", code == "NO_ACTIVE_CAPTURE")
+        })
     }
 
     private fun networkWorker(port: Int) {
         network.worker(port)
+    }
+
+    private fun networkSupervisor(port: Int) {
+        network.supervisor(port)
     }
 
     private fun normalizeNetworkJson(element: JsonElement): JsonElement = when (element) {
@@ -89,10 +142,7 @@ class NativeCli(private val runner: NativeProcessRunner, private val network: Na
                 val target = databaseTarget(args, platform)
                 val invocation = when (platform.lowercase()) {
                     "android" -> listOf("adb", "-s", target.first, "shell", "run-as", target.second, "find", "databases", "-type", "f")
-                    "ios" -> listOf(
-                        "sh", "-c",
-                        "root=\$(xcrun simctl get_app_container ${quote(target.first)} ${quote(target.second)} data); cd \"\$root\" && find . -name '*.db' -type f | sed 's#^\\./##'",
-                    )
+                    "ios" -> return listIosDatabases(target)
                     else -> error("unsupported platform '$platform'; expected android or ios")
                 }
                 printResult(runner.run(invocation))
@@ -104,14 +154,13 @@ class NativeCli(private val runner: NativeProcessRunner, private val network: Na
                 requireSafeRelativePath(database.value)
                 val path = "/tmp/lynx-native-${safeName(database.value)}.db"
                 val result = when (platform.lowercase()) {
-                    "android" -> {
-                        val shell = listOf("adb", "-s", target.first, "exec-out", "run-as", target.second, "cat", database.value)
-                            .joinToString(" ") { quote(it) }
-                        runner.run(listOf("sh", "-c", "$shell > ${quote(path)}"))
-                    }
+                    "android" -> runner.runToFile(
+                        listOf("adb", "-s", target.first, "exec-out", "run-as", target.second, "cat", database.value),
+                        path,
+                    )
                     "ios" -> {
-                        val rootCommand = "root=\$(xcrun simctl get_app_container ${quote(target.first)} ${quote(target.second)} data)"
-                        runner.run(listOf("sh", "-c", "$rootCommand && cp \"\$root/${database.value}\" ${quote(path)}"))
+                        val root = iosContainer(target) ?: return
+                        runner.run(listOf("cp", "$root/${database.value}", path))
                     }
                     else -> error("unsupported platform '$platform'; expected android or ios")
                 }
@@ -130,6 +179,24 @@ class NativeCli(private val runner: NativeProcessRunner, private val network: Na
         }
     }
 
+    private fun listIosDatabases(target: Pair<String, String>) {
+        val root = iosContainer(target) ?: return
+        val result = runner.run(listOf("find", root, "-name", "*.db", "-type", "f"))
+        if (result.exitCode != 0) return printResult(result)
+        val prefix = "$root/"
+        val relative = result.stdout.lineSequence().joinToString("\n") { it.removePrefix(prefix) }
+        printResult(result.copy(stdout = if (relative.isBlank()) relative else "$relative\n"))
+    }
+
+    private fun iosContainer(target: Pair<String, String>): String? {
+        val result = runner.run(listOf("xcrun", "simctl", "get_app_container", target.first, target.second, "data"))
+        if (result.exitCode != 0) {
+            printResult(result)
+            return null
+        }
+        return result.stdout.trim().takeIf { it.isNotEmpty() }
+    }
+
     /** Returns the platform target ID and app identifier for DB discovery and snapshots. */
     private fun databaseTarget(args: List<String>, platform: String): Pair<String, String> = when (platform.lowercase()) {
         "android" -> (option(args, "--device") ?: error("Android requires --device <adb-serial>")) to
@@ -141,14 +208,16 @@ class NativeCli(private val runner: NativeProcessRunner, private val network: Na
         else -> error("unsupported platform '$platform'; expected android or ios")
     }
 
-    private fun option(args: List<String>, name: String): String? = args.windowed(2, 1).firstOrNull { it[0] == name }?.getOrNull(1)
+    private fun option(args: List<String>, name: String): String? {
+        args.firstOrNull { it.startsWith("$name=") }?.substringAfter('=')?.takeIf(String::isNotEmpty)?.let { return it }
+        return args.windowed(2, 1).firstOrNull { it[0] == name }?.getOrNull(1)?.takeUnless { it.startsWith("--") }
+    }
     private fun safeName(value: String) = value.replace(Regex("[^A-Za-z0-9_.-]"), "_")
     private fun requireSafeRelativePath(value: String) {
         require(!value.startsWith('/') && value.split('/').none { it == ".." || it.isBlank() }) {
             "database path must be a safe app-relative path"
         }
     }
-    private fun quote(value: String) = "'" + value.replace("'", "'\\''") + "'"
     private fun printResult(result: NativeCommandResult) {
         if (result.stdout.isNotBlank()) print(result.stdout)
         if (result.exitCode != 0 && result.stderr.isNotBlank()) print(result.stderr)

@@ -9,7 +9,12 @@ import kotlin.native.concurrent.Worker
 internal class PosixNativeConnectionDispatcher {
     fun dispatch(work: () -> Unit) {
         val worker = Worker.start(name = "lynx-network-client")
-        worker.execute(TransferMode.UNSAFE, { work }) { task -> task() }
+        // A native worker exception aborts the detached proxy process. The connection handler
+        // already materializes protocol failures, but keep the dispatcher boundary defensive so
+        // malformed peer bytes or platform interop failures cannot kill future captures.
+        worker.execute(TransferMode.UNSAFE, { work }) { task ->
+            try { task() } catch (_: Throwable) { /* isolate one connection from the proxy */ }
+        }
         worker.requestTermination()
     }
 }

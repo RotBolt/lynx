@@ -16,7 +16,8 @@ or attach again when the target changes.
 
    ```bash
    lynx --version
-   lynx devices
+   lynx doctor --json
+   lynx devices --json
    ```
 
 2. Attach to the debuggable app. Android uses the device serial and package;
@@ -30,6 +31,9 @@ or attach again when the target changes.
 
 3. Keep the attach session alive while using database snapshots and queries.
    A snapshot is session-owned and cannot be queried after detach.
+
+`devices --json` reports Android and iOS Simulator availability together. Use
+its stable `id`; do not attach a shutdown or unavailable simulator.
 
 ## Database investigation
 
@@ -68,25 +72,29 @@ not as proof that the database is unusable.
 
 ## Network investigation
 
-The native executable supports persistent HTTP/1.1, HTTPS MITM, and HTTP/2 capture. Start it
+The native executable supports persistent HTTP/1.1, HTTPS MITM, HTTP/2, and
+WebSocket-over-TLS capture. Start it
 in one shell and query it from another:
 
 ```bash
 lynx network start --json
 lynx network doctor --json
 lynx network list --json
+lynx network snapshot --json
 ```
 
-Use the `requestId` from `network list` with `network get` to retrieve the
-complete request/response bodies, headers, timing, failures, and WebSocket
-frames. Capture requires the app to use the Android system proxy and trust the
+`network list` is a session catalog. Use the returned `session_id` with
+`network list --session <session_id>` to retrieve verified app-only exchanges;
+use a request ID from that response with `network get` for complete
+request/response bodies, headers, timing, failures, and WebSocket frames.
+Capture requires the app to use the Android system proxy and trust the
 Lynx CA for HTTPS; direct/native sockets, certificate pinning, and QUIC/HTTP3
 are reported as limitations rather than silently treated as captured.
 
 The native executable also persists attach state and network evidence. Its first
 network run creates `$HOME/.lynx/certs/daemon.pem`; install that CA in the
-debuggable app/device before HTTPS capture. TLS-WebSocket and QUIC/HTTP3 are under
-construction 🚧 and must be reported as native limitations.
+debuggable app/device before HTTPS capture. QUIC/HTTP3 remains under
+construction 🚧 and must be reported as a native limitation.
 
 ## Agent operating rules
 

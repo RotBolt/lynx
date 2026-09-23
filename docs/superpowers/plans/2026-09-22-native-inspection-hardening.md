@@ -83,10 +83,12 @@ describe the JVM backend and must not be treated as proof of native parity.
 | M1.1-05 | Transactional worker/proxy lifecycle, restart handling, crash recovery. | V4 + V0 | `fix(network): restore capture resources` / `checkpoint/m1-1/05-lifecycle` |
 | M1.1-06 | Reproduce/fix certificate issuance failures and preserve diagnostic causes. | V5 + V0 | `fix(network): serialize certificate issuance` / `checkpoint/m1-1/06-tls` |
 | M1.1-07 | Shared connection gate plus iOS Simulator ownership adapter and pass-through. | V6 iOS + V0 both | `feat(network): scope simulator capture to app` / `checkpoint/m1-1/07-ios-scope` |
-| M1.1-08 | Production Android relay, host transport, ownership resolver, cleanup and ABI packaging. | V6 Android + V0 both | `feat(network): verify Android socket owners` / `checkpoint/m1-1/08-android-scope` |
+| M1.1-08 | Production Android relay, host transport, ownership resolver, concurrent-client handling, cleanup and ABI packaging. | V6 Android + V0 both; H1/H2/WS must coexist in one capture | `feat(network): verify Android socket owners` / `checkpoint/m1-1/08-android-scope` |
 | M1.1-WS | Publish open WebSocket handshake/data/control frames incrementally; no close required. | Live reads before close + V0 + V6 | `fix(network): publish live websocket frames` / `checkpoint/m1-1/WS-live-frames` |
 | M1.1-09 | Native CLI session catalog/snapshot/scoped list/get; update consumers atomically. | V7 + V0 + V6 both | `feat(cli)!: scope network inspection sessions` / `checkpoint/m1-1/09-scoped-cli` |
-| M1.1-10 | Extracted distribution, bundled agent instructions, complete regression report. | V8 | `build: verify scoped native distribution` / `checkpoint/m1-1/10-macos-release-ready` |
+| M1.1-09a | Cross-target lifecycle hardening: an active capture is immutable to its attached device/app; snapshot/start reject a different attachment, while stop/detach restore the persisted capture target instead of routing iOS identifiers through ADB. | V7 + iOS stop/detach regression + V0 | `fix(network): isolate cross-target cleanup` / `checkpoint/m1-1/09a-cross-target-cleanup` |
+| M1.1-09b | iOS snapshot and cleanup regression: validate active iOS snapshots with real target traffic; prevent stale Android proxy records from invoking ADB during iOS stop/detach; preserve Android cleanup and database behavior. | iOS snapshot non-empty positive + no-traffic contract + no-ADB stop/detach + V0 | Verified in `c41d81c` / `checkpoint/m1-1/09b-ios-cleanup` |
+| M1.1-10 | Extracted distribution, bundled agent instructions, complete regression report. | V8 | `6d4d1cc` / `checkpoint/m1-1/10-macos-release-ready` |
 
 Execution is sequential. Inactive adapter code may be added behind internal test
 entrypoints before cutover, while existing protocol checks still pass. Do not
@@ -101,6 +103,24 @@ Read these component plans in dependency order:
 1. [Baseline, feasibility, checkpoint and release verification](2026-09-22-native-inspection-verification.md): M1.1-00, 01, 10.
 2. [Tool and device discovery](2026-09-22-native-host-discovery.md): M1.1-02, 03.
 3. [Session state, lifecycle, TLS, attribution and CLI cutover](2026-09-22-app-scoped-network-capture.md): M1.1-04 through 09.
+4. [Cross-target cleanup regression](../bugs/2026-09-23-cross-target-capture-cleanup.md): M1.1-09a.
+
+### Added regression reports (2026-09-23)
+
+The latest iOS reports are explicitly part of M1.1-09b, not separate unscoped
+work:
+
+- `network snapshot --json` returned `schema_version: lynx.v2`,
+  `through_sequence: 0`, and `exchanges: []` while the attached sample app was
+  producing traffic. The fix must prove a non-empty, target-attributed snapshot;
+  an empty no-traffic result remains valid and must be tested separately.
+- `network stop --json` routed the simulator UDID through Android cleanup and
+  failed with `adb: unknown host service '<UDID>:features'`.
+- `detach --json` surfaced the same failure through its stop-before-detach path.
+
+The acceptance gate is iOS host-proxy cleanup only: no ADB or Android-relay
+invocation, idempotent stop/detach, restored proxy state, and no regression in
+Android cleanup or read-only database commands.
 
 ## Checkpoint procedure
 
@@ -141,6 +161,8 @@ user's current proxy choices. New code must not make legacy state unreadable.
 
 - [ ] All tickets have verified local checkpoints and reproducible evidence.
 - [ ] Both native app-only commands exclude same-destination non-target controls.
+- [ ] iOS snapshot reports real target exchanges, and iOS stop/detach never route
+      simulator identifiers through ADB.
 - [ ] Existing DB and real H1/H2/WSS results remain readable and correct on both targets.
 - [ ] No source changes occurred in the sample apps.
 - [ ] Missing ownership is explicit; physical-iOS/background-service limits are documented.
