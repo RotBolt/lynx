@@ -92,7 +92,7 @@ bool lynx_relay_socket_owned(const lynx_relay_config *config, unsigned long long
 }
 
 int lynx_relay_connect(const char *host, uint16_t port) {
-    struct addrinfo hints = {0}, *results = NULL; hints.ai_socktype = SOCK_STREAM; hints.ai_family = AF_UNSPEC;
+    struct addrinfo hints = {0}, *results = NULL; hints.ai_socktype = SOCK_STREAM; hints.ai_family = AF_INET; hints.ai_flags = AI_ADDRCONFIG;
     char service[6]; snprintf(service, sizeof(service), "%u", port);
     if (!host || getaddrinfo(host, service, &hints, &results) != 0) return -1;
     int socket_fd = -1;
@@ -217,6 +217,17 @@ int main(int argc, char **argv) {
     if (bind(server, (struct sockaddr *)&address, sizeof(address)) != 0 || listen(server, 32) != 0) { close(server); return 1; }
     signal(SIGINT, stop_relay); signal(SIGTERM, stop_relay); signal(SIGCHLD, SIG_IGN);
     printf("{\"schema_version\":\"lynx.relay.v1\",\"type\":\"relay_ready\",\"protocol_version\":%u,\"listen_port\":%u}\n", LYNX_RELAY_PROTOCOL_VERSION, config.listen_port); fflush(stdout);
-    while (running) { int client = accept(server, NULL, NULL); if (client < 0) { if (errno == EINTR) continue; break; } (void)lynx_relay_forward(client, &config); close(client); }
+    while (running) {
+        int client = accept(server, NULL, NULL);
+        if (client < 0) { if (errno == EINTR) continue; break; }
+        pid_t worker = fork();
+        if (worker == 0) {
+            close(server);
+            (void)lynx_relay_forward(client, &config);
+            close(client);
+            _exit(0);
+        }
+        close(client);
+    }
     close(server); return 0;
 }
