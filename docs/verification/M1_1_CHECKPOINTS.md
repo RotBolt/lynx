@@ -12,6 +12,7 @@ certificates and traffic remain under ignored `build/verification/` directories.
 | M1.1-03 | pending | pass: API 17 emulator listed as attachable | pass: booted iOS 26.4 Simulator listed as attachable; shutdown simulators retained but not attachable | source/snapshot rows matched on both platforms | pass | pass | pass | Android proxy `:0`, no reverse mappings, macOS web and secure-web proxies restored | pass for macOS discovery; Linux iOS is explicitly not applicable |
 | M1.1-04 | pending | pass: legacy DB/protocol regression | pass: legacy DB/protocol regression | source/snapshot rows matched on both platforms | pass | pass | pass | Android proxy `:0`, no reverse mappings, macOS web and secure-web proxies restored | pass; versioned verified-capture repository internal until lifecycle/cutover |
 | M1.1-06 | pending | pass: real sample H1/H2/WSS and DB validation | pass: real sample H1/H2/WSS and DB validation | source/snapshot rows matched on both platforms | pass | pass | pass | Android proxy `:0`; macOS web and secure-web proxies restored | candidate verification recorded; checkpoint follows committed-tree gate |
+| M1.1-07 | pending | pass: legacy Android regression | pass: scoped iOS H1/H2/WSS and foreign pass-through | source/snapshot rows matched on both platforms | pass | pass | pass | Android proxy `:0`; macOS web and secure-web proxies restored | candidate verification recorded; Android ownership remains M1.1-08 |
 
 Use `pass`, `fail`, `blocked`, or `not_run`; never replace a missing live row
 with an old result or a local fixture.
@@ -82,3 +83,16 @@ with an old result or a local fixture.
   matched. Android ended at proxy `:0`; macOS web and secure-web proxy settings
   matched before and after. The harness received the Android SDK platform-tools
   directory only as a temporary PATH prefix; no shell configuration changed.
+
+## M1.1-07 pre-commit evidence
+
+- The macOS libproc bridge resolves the current simulator app container, PID
+  start identity, and exact proxy tuple before TLS interception. A live probe
+  independently returned `verified_target` for the unchanged sample socket.
+- Scoped iOS smoke passed real HTTP/1.1, HTTP/2, and WebSocket exchanges with
+  readable bodies/frames. A host curl through the same proxy completed without
+  the Lynx CA and produced zero retained exchanges for its unique URL. Foreign
+  and unknown iOS admission failures are not retained as synthetic exchanges.
+- The V0 Android+iOS network and database gate passed at
+  `build/verification/m1-1/07/precommit-final-20260923-0745`; Android uses its
+  existing broad path until the dedicated relay ticket M1.1-08.

@@ -17,6 +17,7 @@ class PosixNativeNetworkInspector(
     private val androidProxy = NativeAndroidProxyController(processes)
     private val macProxy = NativeMacSystemProxyController(processes, service = null)
     private val macRecovery = NativeMacProxyRecovery(macProxy, store)
+    private val ownerResolver = nativeConnectionOwnerResolver()
     private val clientDispatcher = PosixNativeConnectionDispatcher()
     private val captures = NativeCaptureCoordinator(captureRepository, idProvider = { "capture_${randomId()}" })
 
@@ -61,6 +62,9 @@ class PosixNativeNetworkInspector(
         }
         val caps = capabilities().copy(proxyEndpoint = endpoint, proxyStatus = "starting")
         val session = sessions.load()
+        if (session?.deviceSerial?.startsWith("ios-simulator:") == true && ownerResolver == null) {
+            error("APP_ATTRIBUTION_UNAVAILABLE")
+        }
         val captureId = session?.let { attached ->
             captures.start(
                 attached.id,
@@ -306,9 +310,15 @@ class PosixNativeNetworkInspector(
         // sockets must be blocking for TLS handshakes and complete bodies.
         fcntl(client, F_SETFL, fcntl(client, F_GETFL) and O_NONBLOCK.inv())
         val started = getTimeMillis()
+        var admissionDecision: ConnectionAdmission.Decision? = null
         try {
+            admissionDecision = admission(client)
             val raw = readHeaders(client)
             val request = NativeHttpParser.parseRequest(raw)
+            if (admissionDecision is ConnectionAdmission.Decision.PassThrough) {
+                forwardWithoutRecording(client, request, raw)
+                return
+            }
             val requestId = RequestId("req_${randomId()}")
             if (request.method.equals("CONNECT", true)) {
                 handleConnect(client, request.url, requestId, started)
@@ -337,9 +347,41 @@ class PosixNativeNetworkInspector(
                 store.append(exchange(request, requestId, response, null, started))
             } finally { close(upstream) }
         } catch (t: Throwable) {
-            // Keep failures visible to an agent; malformed/failed requests are evidence too.
-            runCatching { store.append(failureExchange(client, started, t.message ?: t::class.simpleName.orEmpty())) }
+            // Foreign/unknown iOS connections are deliberately opaque. Never retain their
+            // parse/TLS failures as if they belonged to the attached app.
+            if (admissionDecision !is ConnectionAdmission.Decision.PassThrough) {
+                runCatching { store.append(failureExchange(client, started, t.message ?: t::class.simpleName.orEmpty())) }
+            }
         } finally { close(client) }
+    }
+
+    private fun admission(client: Int): ConnectionAdmission.Decision? {
+        val session = sessions.load() ?: return null
+        if (!session.deviceSerial.startsWith("ios-simulator:")) return null
+        val tuple = nativeAcceptedSocketTuple(client)
+            ?: return ConnectionAdmission.Decision.PassThrough("accepted socket tuple unavailable")
+        val target = CaptureTarget("ios", session.deviceSerial.removePrefix("ios-simulator:"), session.packageName)
+        return ConnectionAdmission(ownerResolver ?: return ConnectionAdmission.Decision.PassThrough("ownership resolver unavailable"))
+            .decide(target, tuple)
+    }
+
+    private fun forwardWithoutRecording(client: Int, request: NativeHttpParser.Request, raw: String) {
+        if (request.method.equals("CONNECT", true)) {
+            val host = request.url.substringBeforeLast(':').ifBlank { request.url }
+            val port = request.url.substringAfterLast(':', "443").toIntOrNull() ?: 443
+            val upstream = connect(host, port)
+            try {
+                sendBytes(client, "HTTP/1.1 200 Connection Established\r\nProxy-Agent: lynx\r\n\r\n".encodeToByteArray())
+                relayOpaque(client, upstream)
+            } finally { close(upstream) }
+            return
+        }
+        val target = parseTarget(request.url, request.headers["Host"] ?: request.headers["host"])
+        val upstream = connect(target.first, target.second)
+        try {
+            sendBytes(upstream, NativeHttpParser.originFormRequest(raw, request).encodeToByteArray())
+            sendBytes(client, readHeaders(upstream).encodeToByteArray() + readUntilClose(upstream))
+        } finally { close(upstream) }
     }
 
     private fun handleConnect(client: Int, authority: String, requestId: RequestId, started: Long) {
@@ -617,6 +659,33 @@ class PosixNativeNetworkInspector(
      * one byte at a time at the protocol boundary. */
     private fun readHeaders(fd: Int): String { val bytes = mutableListOf<Byte>(); while (bytes.size < 1024 * 1024) { memScoped { val native = allocArray<ByteVar>(1); val count = recv(fd, native, 1uL, 0); if (count <= 0) return bytes.toByteArray().decodeToString(); bytes += native[0] }; if (bytes.size >= 4 && bytes.takeLast(4).toByteArray().decodeToString() == "\r\n\r\n") break }; return bytes.toByteArray().decodeToString() }
     private fun readUntilClose(fd: Int): ByteArray { val bytes = mutableListOf<Byte>(); memScoped { val buffer = allocArray<ByteVar>(8192); while (true) { val count = recv(fd, buffer, 8192.convert(), 0); if (count <= 0) break; for (i in 0 until count) bytes += buffer[i] } }; return bytes.toByteArray() }
+    private fun relayOpaque(left: Int, right: Int) = memScoped {
+        val pollers = allocArray<pollfd>(2)
+        val buffer = allocArray<ByteVar>(16 * 1024)
+        var leftOpen = true
+        var rightOpen = true
+        while (leftOpen || rightOpen) {
+            pollers[0].fd = left; pollers[0].events = POLLIN.toShort(); pollers[0].revents = 0
+            pollers[1].fd = right; pollers[1].events = POLLIN.toShort(); pollers[1].revents = 0
+            if (poll(pollers, 2u, 250) <= 0) continue
+            for (index in 0..1) {
+                if (pollers[index].revents.toInt() and (POLLIN or POLLHUP or POLLERR) == 0) continue
+                val source = if (index == 0) left else right
+                val destination = if (index == 0) right else left
+                val count = recv(source, buffer, 16_384u, 0)
+                if (count <= 0) {
+                    if (index == 0) leftOpen = false else rightOpen = false
+                } else {
+                    var offset = 0
+                    while (offset < count) {
+                        val written = send(destination, buffer + offset, (count - offset).toULong(), 0)
+                        if (written <= 0) { leftOpen = false; rightOpen = false; break }
+                        offset += written.toInt()
+                    }
+                }
+            }
+        }
+    }
     private fun relayPlainWebSocket(client: Int, upstream: Int, request: NativeHttpParser.Request, id: RequestId, response: NativeHttpParser.Response, started: Long) {
         val frames = mutableListOf<NetworkFrame>()
         memScoped {
