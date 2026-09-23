@@ -1,6 +1,7 @@
 # App-scoped native inspection contract
 
-Status: implementation specification; the changes described here are not yet implemented.
+Status: implemented in native CLI commit `922b10a`; retained as the contract and
+verification reference for the M1.1-09 checkpoint.
 Date: 2026-09-22.
 Applies to the native `lynx` executable. The JVM compatibility backend must keep passing its existing tests.
 

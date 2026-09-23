@@ -14,10 +14,29 @@ certificates and traffic remain under ignored `build/verification/` directories.
 | M1.1-06 | pending | pass: real sample H1/H2/WSS and DB validation | pass: real sample H1/H2/WSS and DB validation | source/snapshot rows matched on both platforms | pass | pass | pass | Android proxy `:0`; macOS web and secure-web proxies restored | candidate verification recorded; checkpoint follows committed-tree gate |
 | M1.1-07 | `8ed413c` / `checkpoint/m1-1/07-ios-scope` | pass: legacy Android regression | pass: scoped iOS H1/H2/WSS and foreign pass-through | source/snapshot rows matched on both platforms | pass | pass | pass | Android proxy `:0`; macOS web and secure-web proxies restored | pass; Android ownership remains M1.1-08 |
 | M1.1-08 / WS | `08eb040` | pass: relay transport and live WSS frames | pass: relay-independent iOS scope | source/snapshot rows matched on both platforms | pass | pass | pass | Android proxy `:0`, no reverse mappings; macOS lease restored | pass; manual Android live WSS evidence |
-| M1.1-09 | pending | pass: session-scoped H1/H2/WSS | pass: session-scoped H1/H2/WSS | source/snapshot rows matched on both platforms | pass | pass | pass | Android proxy `:0`, no reverse mappings; macOS lease restored | pre-commit pass; commit/tag follows committed-tree rerun |
+| M1.1-09 | `922b10a` / `checkpoint/m1-1/09-scoped-cli` | pass: session-scoped H1/H2/WSS (manual live relay evidence) | pass: committed-tree session-scoped H1/H2/WSS | source/snapshot rows matched on both platforms | pass | pass | pass | Android proxy `:0`, no reverse mappings; macOS lease restored | pass; v2 CLI cutover and repository wiring verified |
 
 Use `pass`, `fail`, `blocked`, or `not_run`; never replace a missing live row
 with an old result or a local fixture.
+
+## M1.1-09 committed-tree evidence
+
+- Commit `922b10a` passed the full committed-tree gate: model, native host,
+  network, CLI tests, and macOS release executable link.
+- The native CLI now emits `lynx.v2`: `network list` returns session catalog;
+  `network snapshot` and `network list --session <id>` return finite,
+  app/device-attributed exchanges; missing/invalid sessions return structured
+  errors. Filtered list requires an explicit session.
+- Android live relay evidence captured HTTP/1.1, HTTP/2, and an open WebSocket
+  (HTTP 101 plus client/server ping frames) before close. Records carried the
+  capture session ID and `attribution.status=verified`.
+- Post-commit iOS smoke captured HTTP/1.1 200, HTTP/2 200, and WebSocket 101
+  with echoed ping and live frame visibility. Evidence:
+  `build/verification/m1-1/09/ios-live-20260923-0314/summary.txt`.
+- Android cleanup was verified after the post-commit run: global proxy `:0`
+  and no reverse mappings. A later Android harness retry was blocked by the
+  currently installed `dev.lynx.dummyapp` trust state, not by CLI/session
+  assertions; existing manual relay evidence remains the network proof.
 
 ## M1.1-01 pre-commit evidence
 
