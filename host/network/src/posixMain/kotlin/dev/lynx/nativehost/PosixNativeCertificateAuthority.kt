@@ -37,12 +37,16 @@ class PosixNativeCertificateAuthority(
     }
 
     fun ensureLeaf(host: String): Leaf {
-        ensureCa()
+        val ca = ensureCa()
         val safe = host.replace(Regex("[^A-Za-z0-9_.-]"), "_")
         val cert = "$root/leaf-$safe.pem"
         val key = "$root/leaf-$safe.key"
         withLock("leaf-issuance") {
-            if (!exists(cert) || !exists(key)) {
+            // CA material can be replaced independently (for example after a clean
+            // reinstall). Never reuse a cached leaf signed by an older root: Android
+            // then reports `certificate_unknown` even when the newly installed root
+            // fingerprint is correct.
+            if (!exists(cert) || !exists(key) || !leafChainsTo(cert, ca)) {
                 val temporary = "$root/.leaf-$safe.${getpid()}.${kotlin.time.Clock.System.now().toEpochMilliseconds()}"
                 val temporaryCert = "$temporary.pem"
                 val temporaryKey = "$temporary.key"
@@ -64,6 +68,9 @@ class PosixNativeCertificateAuthority(
         }
         return Leaf(cert, key)
     }
+
+    private fun leafChainsTo(leaf: String, ca: String): Boolean =
+        runner.run(listOf("openssl", "verify", "-CAfile", ca, leaf)).exitCode == 0
 
     fun fingerprint(): String? = runner.run(listOf("openssl", "x509", "-in", ensureCa(), "-noout", "-fingerprint", "-sha256")).stdout.trim().substringAfter("=", "").replace(":", ":").takeIf(String::isNotBlank)
 

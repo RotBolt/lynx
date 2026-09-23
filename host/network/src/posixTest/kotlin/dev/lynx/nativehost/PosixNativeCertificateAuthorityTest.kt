@@ -67,4 +67,28 @@ class PosixNativeCertificateAuthorityTest {
         assertTrue(leaf.certificate.endsWith("leaf-127.0.0.1.pem"))
         assertNotNull(authority.fingerprint())
     }
+
+    @Test
+    fun regeneratesCachedLeafWhenRootCaWasReplaced() {
+        val root = "/tmp/lynx-native-ca-rotation-${kotlin.time.Clock.System.now().toEpochMilliseconds()}"
+        val authority = PosixNativeCertificateAuthority(root = root)
+        val first = authority.ensureLeaf("api.example.test")
+        val firstFingerprint = PosixProcessRunner().run(
+            listOf("openssl", "x509", "-in", first.certificate, "-noout", "-fingerprint", "-sha256"),
+        ).stdout
+
+        // Simulate `network ca remove` followed by a new CA while the old leaf cache
+        // is still present. The next handshake must not serve that stale leaf.
+        PosixProcessRunner().run(listOf("rm", "-f", "$root/daemon.pem", "$root/daemon.key"))
+        authority.ensureCa()
+        val second = authority.ensureLeaf("api.example.test")
+        val secondFingerprint = PosixProcessRunner().run(
+            listOf("openssl", "x509", "-in", second.certificate, "-noout", "-fingerprint", "-sha256"),
+        ).stdout
+
+        assertTrue(firstFingerprint.isNotBlank())
+        assertTrue(secondFingerprint.isNotBlank())
+        assertTrue(firstFingerprint != secondFingerprint, "cached leaf was reused after CA rotation")
+        assertEquals(0, PosixProcessRunner().run(listOf("openssl", "verify", "-CAfile", "$root/daemon.pem", second.certificate)).exitCode)
+    }
 }
