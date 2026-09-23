@@ -53,6 +53,11 @@ class PosixNativeNetworkInspector(
 
     private fun snapshot(): NetworkCommandResult.Snapshot {
         val id = store.captureId()?.takeIf { store.isRunning() } ?: error("NO_ACTIVE_CAPTURE")
+        val capture = captureRepository.session(id) ?: error("CAPTURE_SESSION_NOT_FOUND")
+        val attached = sessions.load()
+        if (attached != null && capture.target != captureTarget(attached)) {
+            error("CAPTURE_TARGET_MISMATCH active=${capture.target.deviceId}/${capture.target.applicationId} attached=${attached.deviceSerial}/${attached.packageName}")
+        }
         val read = captureRepository.read(id)
         return NetworkCommandResult.Snapshot(id, read.throughSequence, scopedExchanges(read), read.inFlightCount)
     }
@@ -143,6 +148,11 @@ class PosixNativeNetworkInspector(
         val port = if (settings.listenPort == 0) 62006 else settings.listenPort
         val endpoint = "${settings.listenHost}:$port"
         if (store.isRunning() && store.endpoint() == endpoint) {
+            val activeCapture = store.captureId()?.let(captureRepository::session)
+            val attached = sessions.load()
+            if (activeCapture != null && attached != null && activeCapture.target != captureTarget(attached)) {
+                error("CAPTURE_ACTIVE")
+            }
             if (currentCaptureHealthy()) {
                 val running = capabilities().copy(proxyEndpoint = endpoint, proxyStatus = "running")
                 return NetworkCommandResult.Started(
@@ -278,7 +288,9 @@ class PosixNativeNetworkInspector(
             macRecovery.restoreOwnedLease()
             return
         }
-        val session = sessions.load() ?: return
+        val deviceSerial = captureTargetForCleanup()?.let(::deviceSerialForTarget)
+            ?: sessions.load()?.deviceSerial
+            ?: return
         if (previous?.get("controller") == "android-relay") {
             val relay = NativeAndroidRelayController.Lease(
                 remotePath = previous["relayPath"] ?: return,
@@ -286,18 +298,26 @@ class PosixNativeNetworkInspector(
                 relayPort = previous["relayPort"]?.toIntOrNull() ?: return,
                 upstreamPort = previous["relayUpstreamPort"]?.toIntOrNull() ?: return,
             )
-            androidRelay.stop(session.deviceSerial, relay)
+            androidRelay.stop(deviceSerial, relay)
         }
-        androidProxy.restore(session.deviceSerial, previous)
+        androidProxy.restore(deviceSerial, previous)
     }
 
     private fun restoreProxy(previous: Map<String, String?>?) {
         if (previous?.get("controller") == "macos") {
             macProxy.restore(previous)
         } else {
-            sessions.load()?.let { androidProxy.restore(it.deviceSerial, previous) }
+            captureTargetForCleanup()?.let(::deviceSerialForTarget)?.let { androidProxy.restore(it, previous) }
+            ?: sessions.load()?.let { androidProxy.restore(it.deviceSerial, previous) }
         }
     }
+
+    private fun captureTargetForCleanup(): CaptureTarget? = store.captureId()
+        ?.let(captureRepository::session)
+        ?.target
+
+    private fun deviceSerialForTarget(target: CaptureTarget): String =
+        if (target.platform == "ios") "ios-simulator:${target.deviceId}" else target.deviceId
 
     private fun reconcileRunningState() {
         if (!store.isRunning()) return

@@ -4,6 +4,8 @@ import dev.lynx.model.NetworkCapabilities
 import dev.lynx.model.NetworkCaptureSettings
 import dev.lynx.model.NetworkCommand
 import dev.lynx.model.CaptureState
+import dev.lynx.model.CaptureSession
+import dev.lynx.model.CaptureTarget
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -12,6 +14,101 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class NativeMacProxyLifecycleTest {
+    @Test
+    fun stopUsesCaptureTargetWhenAttachmentChangedToIos() {
+        val root = "/tmp/lynx-network-cross-target-stop-${kotlin.time.Clock.System.now().toEpochMilliseconds()}"
+        val store = PosixNativeNetworkStateStore(root)
+        val repository = PosixCaptureRepository("$root/captures")
+        repository.create(
+            CaptureSession(
+                id = "capture-android",
+                attachmentId = "session-android",
+                target = CaptureTarget("android", "emulator-5554", "dev.lynx.dummyapp"),
+                state = CaptureState.RUNNING,
+                startedAtEpochMillis = 1,
+            ),
+        )
+        store.setRunning(
+            endpoint = "0.0.0.0:62006",
+            capabilities = NetworkCapabilities(httpsMitm = true),
+            previousProxy = mapOf(
+                "controller" to "android-relay",
+                "relayPath" to "/data/local/tmp/lynx/relay-capture-android",
+                "relayPid" to "4812",
+                "relayPort" to "62007",
+                "relayUpstreamPort" to "62006",
+                "http_proxy" to ":0",
+                "https_proxy" to null,
+                "global_http_proxy_host" to null,
+                "global_http_proxy_port" to null,
+            ),
+            workerPid = 4813,
+            workerStartIdentity = "worker-start",
+            supervisorPid = null,
+            captureToken = "token",
+            captureId = "capture-android",
+        )
+        val runner = RecordingRunner()
+        val currentAttachment = InMemoryNativeSessionStore().also {
+            it.save(NativeSession("session-ios", "ios-simulator:SIM-1", "dev.lynx.dummyapp", 9123))
+        }
+
+        PosixNativeNetworkInspector(
+            store = store,
+            sessions = currentAttachment,
+            processes = runner,
+            certificates = PosixNativeCertificateAuthority(
+                runner = runner,
+                root = "$root/certs",
+            ),
+            captureRepository = repository,
+        ).execute(NetworkCommand.Stop)
+
+        assertTrue(runner.commands.any { it.take(4) == listOf("adb", "-s", "emulator-5554", "shell") })
+        assertFalse(runner.commands.any { it.contains("ios-simulator:SIM-1") || it.contains("SIM-1") })
+        assertFalse(store.isRunning())
+    }
+
+    @Test
+    fun snapshotRejectsActiveCaptureForDifferentAttachmentTarget() {
+        val root = "/tmp/lynx-network-cross-target-snapshot-${kotlin.time.Clock.System.now().toEpochMilliseconds()}"
+        val store = PosixNativeNetworkStateStore(root)
+        val repository = PosixCaptureRepository("$root/captures")
+        repository.create(
+            CaptureSession(
+                id = "capture-android",
+                attachmentId = "session-android",
+                target = CaptureTarget("android", "emulator-5554", "dev.lynx.dummyapp"),
+                state = CaptureState.RUNNING,
+                startedAtEpochMillis = 1,
+            ),
+        )
+        store.setRunning(
+            endpoint = "0.0.0.0:62006",
+            capabilities = NetworkCapabilities(httpsMitm = true),
+            previousProxy = null,
+            workerPid = 4813,
+            workerStartIdentity = "worker-start",
+            supervisorPid = null,
+            captureToken = "token",
+            captureId = "capture-android",
+        )
+        val currentAttachment = InMemoryNativeSessionStore().also {
+            it.save(NativeSession("session-ios", "ios-simulator:SIM-1", "dev.lynx.dummyapp", 9123))
+        }
+
+        val error = assertFailsWith<IllegalStateException> {
+            PosixNativeNetworkInspector(
+                store = store,
+                sessions = currentAttachment,
+                processes = RecordingRunner(),
+                captureRepository = repository,
+            ).execute(NetworkCommand.Snapshot)
+        }
+
+        assertTrue(error.message!!.startsWith("CAPTURE_TARGET_MISMATCH"))
+    }
+
     @Test
     fun failedStartInterruptsItsCaptureLease() {
         val root = "/tmp/lynx-network-failed-capture-${kotlin.time.Clock.System.now().toEpochMilliseconds()}"
@@ -161,4 +258,12 @@ class NativeMacProxyLifecycleTest {
         workerPid = 4242,
         captureToken = "token-1",
     )
+
+    private class RecordingRunner : NativeProcessRunner {
+        val commands = mutableListOf<List<String>>()
+        override fun run(command: List<String>) : NativeCommandResult {
+            commands += command
+            return NativeCommandResult(0, "")
+        }
+    }
 }

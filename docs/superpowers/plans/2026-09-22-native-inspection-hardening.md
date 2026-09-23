@@ -86,6 +86,7 @@ describe the JVM backend and must not be treated as proof of native parity.
 | M1.1-08 | Production Android relay, host transport, ownership resolver, cleanup and ABI packaging. | V6 Android + V0 both | `feat(network): verify Android socket owners` / `checkpoint/m1-1/08-android-scope` |
 | M1.1-WS | Publish open WebSocket handshake/data/control frames incrementally; no close required. | Live reads before close + V0 + V6 | `fix(network): publish live websocket frames` / `checkpoint/m1-1/WS-live-frames` |
 | M1.1-09 | Native CLI session catalog/snapshot/scoped list/get; update consumers atomically. | V7 + V0 + V6 both | `feat(cli)!: scope network inspection sessions` / `checkpoint/m1-1/09-scoped-cli` |
+| M1.1-09a | Cross-target lifecycle hardening: an active capture is immutable to its attached device/app; snapshot/start reject a different attachment, while stop/detach restore the persisted capture target instead of routing iOS identifiers through ADB. | V7 + iOS stop/detach regression + V0 | `fix(network): isolate cross-target cleanup` / `checkpoint/m1-1/09a-cross-target-cleanup` |
 | M1.1-10 | Extracted distribution, bundled agent instructions, complete regression report. | V8 | `6d4d1cc` / `checkpoint/m1-1/10-macos-release-ready` |
 
 Execution is sequential. Inactive adapter code may be added behind internal test
@@ -101,6 +102,7 @@ Read these component plans in dependency order:
 1. [Baseline, feasibility, checkpoint and release verification](2026-09-22-native-inspection-verification.md): M1.1-00, 01, 10.
 2. [Tool and device discovery](2026-09-22-native-host-discovery.md): M1.1-02, 03.
 3. [Session state, lifecycle, TLS, attribution and CLI cutover](2026-09-22-app-scoped-network-capture.md): M1.1-04 through 09.
+4. [Cross-target cleanup regression](../bugs/2026-09-23-cross-target-capture-cleanup.md): M1.1-09a.
 
 ## Checkpoint procedure
 
