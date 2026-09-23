@@ -11,6 +11,7 @@ certificates and traffic remain under ignored `build/verification/` directories.
 | M1.1-02 | pending | pass: API 17 emulator database snapshot | pass: booted iOS 26.4 Simulator database snapshot | source/snapshot rows matched on both platforms | pass | pass | pass | Android proxy `:0`, no reverse mappings, macOS web and secure-web proxies restored | pass; tool resolution and subprocess diagnostics covered by native tests |
 | M1.1-03 | pending | pass: API 17 emulator listed as attachable | pass: booted iOS 26.4 Simulator listed as attachable; shutdown simulators retained but not attachable | source/snapshot rows matched on both platforms | pass | pass | pass | Android proxy `:0`, no reverse mappings, macOS web and secure-web proxies restored | pass for macOS discovery; Linux iOS is explicitly not applicable |
 | M1.1-04 | pending | pass: legacy DB/protocol regression | pass: legacy DB/protocol regression | source/snapshot rows matched on both platforms | pass | pass | pass | Android proxy `:0`, no reverse mappings, macOS web and secure-web proxies restored | pass; versioned verified-capture repository internal until lifecycle/cutover |
+| M1.1-06 | pending | pass: real sample H1/H2/WSS and DB validation | pass: real sample H1/H2/WSS and DB validation | source/snapshot rows matched on both platforms | pass | pass | pass | Android proxy `:0`; macOS web and secure-web proxies restored | candidate verification recorded; checkpoint follows committed-tree gate |
 
 Use `pass`, `fail`, `blocked`, or `not_run`; never replace a missing live row
 with an old result or a local fixture.
@@ -69,3 +70,15 @@ with an old result or a local fixture.
   Android/iOS source and snapshot query rows matched; both WebSocket smokes
   passed. Android finished at proxy `:0` with no reverse mappings; macOS web
   and secure-web proxy snapshots matched before/after.
+
+## M1.1-06 pre-commit evidence
+
+- Native certificate tests include 32 concurrent leaf issuances, certificate
+  parse validation, and actionable failure-stage mapping. The full native/JVM
+  build and macOS executable link gate passed on 2026-09-23.
+- Full V0 evidence is in `build/verification/m1-1/06/precommit-final-20260923-062936`.
+  The unchanged Android and iOS sample applications each completed real HTTPS
+  HTTP/1.1, HTTP/2, and WSS exchanges; database source and snapshot query rows
+  matched. Android ended at proxy `:0`; macOS web and secure-web proxy settings
+  matched before and after. The harness received the Android SDK platform-tools
+  directory only as a temporary PATH prefix; no shell configuration changed.

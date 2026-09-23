@@ -347,24 +347,28 @@ class PosixNativeNetworkInspector(
         val port = authority.substringAfterLast(':', "443").toIntOrNull() ?: 443
         try {
             sendBytes(client, "HTTP/1.1 200 Connection Established\r\nProxy-Agent: lynx\r\n\r\n".encodeToByteArray())
-            val leaf = certificates.ensureLeaf(host)
+            val leaf = try { certificates.ensureLeaf(host) } catch (error: Throwable) {
+                throw NativeTlsFailure("CA_LEAF_SIGN_FAILED", error)
+            }
             val tlsProvider = nativeTlsProvider()
             // Negotiate with the origin first. A downstream client may prefer h2 even when the
             // origin is HTTP/1.1-only; choose the downstream ALPN based on the origin so we never
             // advertise h2 to the app and then fail the upstream handshake.
-            val upstreamFd = connect(host, port)
+            val upstreamFd = try { connect(host, port) } catch (error: Throwable) {
+                throw NativeTlsFailure("TLS_UPSTREAM_FAILED", error)
+            }
             var upstream = try {
                 tlsProvider.client(upstreamFd, host, enableHttp2 = true)
             } catch (error: Throwable) {
                 close(upstreamFd)
-                throw error
+                throw NativeTlsFailure("TLS_UPSTREAM_FAILED", error)
             }
             val upstreamUsesHttp2 = upstream.applicationProtocol == "h2"
             val downstream = try {
                 tlsProvider.server(client, leaf.certificate, leaf.privateKey, enableHttp2 = upstreamUsesHttp2)
             } catch (error: Throwable) {
                 upstream.close()
-                throw error
+                throw NativeTlsFailure("TLS_CLIENT_REJECTED_CERTIFICATE", error)
             }
             var upstreamClosed = false
             try {
@@ -376,12 +380,14 @@ class PosixNativeNetworkInspector(
                     // preserved end-to-end instead of relaying an incompatible h2 TLS session.
                     upstream.close()
                     upstreamClosed = true
-                    val http1Fd = connect(host, port)
+                    val http1Fd = try { connect(host, port) } catch (error: Throwable) {
+                        throw NativeTlsFailure("TLS_UPSTREAM_FAILED", error)
+                    }
                     upstream = try {
                         tlsProvider.client(http1Fd, host, enableHttp2 = false)
                     } catch (error: Throwable) {
                         close(http1Fd)
-                        throw error
+                        throw NativeTlsFailure("TLS_UPSTREAM_FAILED", error)
                     }
                     upstreamClosed = false
                     negotiatedUpstreamUsesHttp2 = upstream.applicationProtocol == "h2"
@@ -439,7 +445,7 @@ class PosixNativeNetworkInspector(
                 downstream.close()
             }
         } catch (t: Throwable) {
-            store.append(NetworkExchange(nativeNetworkEvidenceMeta(EvidenceId("ev_${randomId()}"), sessions.load()), requestId, NetworkRequest("CONNECT", "https://$host", emptyMap(), null), null, NetworkFailure("HTTPS_MITM_ERROR", t.message), NetworkTiming(started, getTimeMillis(), getTimeMillis() - started), NetworkCaptureMetadata(false, 0, false), protocol = "HTTPS"))
+            store.append(NetworkExchange(nativeNetworkEvidenceMeta(EvidenceId("ev_${randomId()}"), sessions.load()), requestId, NetworkRequest("CONNECT", "https://$host", emptyMap(), null), null, NetworkFailure(nativeTlsFailureKind(t), t.message), NetworkTiming(started, getTimeMillis(), getTimeMillis() - started), NetworkCaptureMetadata(false, 0, false), protocol = "HTTPS"))
         }
     }
 
