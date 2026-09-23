@@ -1,0 +1,31 @@
+# Lynx
+
+> Vendor-neutral, read-only network and SQLite inspection CLI for debuggable Android apps and iOS Simulators.
+
+## Start here
+
+- [README](README.md): installation, first-run setup, workflows, FAQ, and real capture evidence.
+- [Command reference](docs/COMMANDS.md): JSON contracts and copy-paste commands.
+- [AI-agent skill](docs/agent-skill/SKILL.md): how an agent attaches, captures, queries, and interprets evidence.
+- [Native distribution](docs/distribution/native.md): release archives, local builds, and host requirements.
+- [Architecture](lynx-spec/ARCHITECTURE.md): host-side capture and read-only database design.
+- [Implementation](lynx-spec/IMPLEMENTATION.md): current implementation boundaries.
+- [Roadmap](lynx-spec/ROADMAP.md): supported, planned, and under-construction work.
+- [Contributor rules](AGENTS.md): repository workflow and non-negotiable MVP boundaries.
+- [Changelog](CHANGELOG.md): release and snapshot capabilities.
+- [Support](SUPPORT.md): reproducible issue-reporting checklist.
+- [Security](SECURITY.md): private vulnerability-reporting guidance.
+
+## Direct answers
+
+- Attach with `lynx attach`, then use `network start`, `network snapshot`, and `network list`.
+- Query a session with `lynx network list --session <session_id> --json`.
+- Discover an app database with `lynx db list`, snapshot its full returned ID, then use read-only SQL.
+- No Android Studio, app-side proxy code, VPN/TUN service, or particular HTTP client is required.
+- Android and iOS Simulator targets are supported from macOS; physical iOS and HTTP/3 remain under construction.
+
+## Evidence rules
+
+Prefer JSON output. Preserve request IDs, session IDs, device/package identity,
+attribution, protocol, timing, response bodies, and failure objects exactly as
+returned. An empty capture does not prove that the app made no request.

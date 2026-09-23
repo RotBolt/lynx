@@ -4,7 +4,8 @@ This is the vendor-neutral execution guide for any coding agent or harness.
 
 ## Architecture boundaries
 
-1. Debuggable Android apps only in the MVP.
+1. Debuggable Android apps and iOS Simulators from a macOS host; physical iOS
+   remains under construction.
 2. Network evidence is proxy-captured and database evidence is SQLite-snapshot based.
 3. Android Studio/App Inspection and JVMTI are not foundational dependencies.
 4. The Evidence Timeline is shared by all collectors.
@@ -25,4 +26,5 @@ This is the vendor-neutral execution guide for any coding agent or harness.
 Investigate the relevant spec and existing tests, add a focused failing test,
 implement the smallest slice, run targeted and full checks, and report exact
 validation results. Preserve vendor-neutral interfaces and explicit capability
-limitations.
+limitations. For public usage, start with `README.md`, `llms.txt`, and
+`docs/agent-skill/SKILL.md`; do not infer support from historical plans.

@@ -2,7 +2,8 @@
 
 ## Global
 
-- Debuggable Android apps only.
+- Debuggable Android apps and iOS Simulators from a macOS host; physical iOS is
+  planned, not part of the current native release.
 - No Android Studio/App Inspection dependency in MVP.
 - JSON for finite responses.
 - JSONL for live streams.
@@ -102,9 +103,9 @@ while that session remains attached.
 
 ### Query/schema
 ```bash
-lynx db query --snapshot snap_12 "SELECT ..." --json
-lynx db tables --snapshot snap_12 --json
-lynx db schema --snapshot snap_12 --json
+lynx db query <snapshot_path> "SELECT ..." --json
+lynx db tables <snapshot_path> --json
+lynx db schema <snapshot_path> --json
 ```
 
 MVP is read-only. Snapshot IDs address an exact database state; database IDs

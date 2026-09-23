@@ -26,7 +26,7 @@ is required at runtime.
 offline/unauthorized rows. `doctor --json` revalidates tool paths and versions.
 Lynx never edits shell profiles.
 
-## JVM compatibility backend
+## JVM compatibility backend (contributors only)
 
 The remaining examples in this file use the legacy JVM daemon protocol for
 compatibility testing. Contributors can build it explicitly:
@@ -42,7 +42,7 @@ Run `daemon` in its own terminal when using this compatibility backend.
 ## Attach and lifecycle ✅
 
 ```bash
-$LYNX attach --device emulator-5554 --package ai.sarvam.prep.app --json
+$LYNX attach emulator-5554 ai.sarvam.prep.app --json
 $LYNX status --json
 $LYNX detach --json
 ```
@@ -50,7 +50,7 @@ $LYNX detach --json
 For an iOS Simulator, use the explicit target prefix:
 
 ```bash
-$LYNX attach --device ios-simulator:<simulator-udid> --package dev.lynx.dummyapp --json
+$LYNX attach ios-simulator:<simulator-udid> dev.lynx.dummyapp --json
 ```
 
 The current iOS target is the booted Simulator. Build/install the sample app
@@ -109,15 +109,16 @@ configuration; it must not contain Lynx-specific proxy settings or code.
 ```bash
 $LYNX network ca show --json
 $LYNX network ca install --json
-$LYNX network ca install --android emulator-5554 --json
-$LYNX network ca install --ios-simulator <simulator-udid> --json
-$LYNX network ca install --ios-device physical-device --json
 $LYNX network ca remove --json
 ```
 
-Installation is explicit. Android opens/stages the platform installer;
-iOS Simulator uses `simctl`; physical iOS receives a generated
-`lynx-ca.mobileconfig`. User trust confirmation is never silently claimed.
+The native `ca install` command creates or refreshes the host CA. It does not
+install trust on a device. Copy `pemPath` from `ca show`, convert it to the
+platform format when needed, and complete the platform trust flow manually.
+Android uses Settings → Install a certificate → **CA certificate**; iOS
+Simulator uses `xcrun simctl keychain <udid> add-root-cert <pemPath>` followed by
+Certificate Trust Settings when requested. Physical iOS capture is under
+construction 🚧.
 
 ## Database inspection ✅
 
@@ -126,9 +127,10 @@ $LYNX db list --platform android --device emulator-5554 \
   --package dev.lynx.dummyapp --json
 $LYNX db snapshot databases/conversation.db --platform android \
   --device emulator-5554 --package dev.lynx.dummyapp --json
-$LYNX db tables --snapshot <snapshot_id> --json
-$LYNX db schema --snapshot <snapshot_id> --json
-$LYNX db query --snapshot <snapshot_id> \
+# Read `path` from the snapshot response.
+$LYNX db tables <snapshot_path> --json
+$LYNX db schema <snapshot_path> --json
+$LYNX db query <snapshot_path> \
   'SELECT id, role, text FROM messages LIMIT 10' --json
 ```
 
@@ -144,8 +146,9 @@ $LYNX db list --platform ios --simulator <simulator-udid> \
   --bundle-id dev.lynx.dummyapp --json
 $LYNX db snapshot Documents/dummyapp.db --platform ios \
   --simulator <simulator-udid> --bundle-id dev.lynx.dummyapp --json
-$LYNX db tables --snapshot <snapshot_id> --json
-$LYNX db query --snapshot <snapshot_id> \
+# Read `path` from the snapshot response.
+$LYNX db tables <snapshot_path> --json
+$LYNX db query <snapshot_path> \
   'SELECT transport, status, response_body, error FROM network_events' --json
 ```
 

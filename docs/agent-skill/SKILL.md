@@ -5,109 +5,144 @@ description: Use the Lynx CLI to attach to a debuggable mobile app, inspect SQLi
 
 # Lynx agent skill 🐾
 
-Lynx is a vendor-neutral, read-only inspector. Prefer its JSON output for
-machine work and preserve the returned IDs when following up. Do not assume a
-device, package, PID, database path, or snapshot ID from an earlier task: list
-or attach again when the target changes.
+Use the released native `lynx` executable. Prefer JSON output, preserve IDs
+exactly as returned, and keep database operations read-only.
 
-## First-run setup
+## Operating contract
 
-1. Confirm `lynx` is executable and on `PATH`:
+- Never assume a device, simulator, package, PID, database ID, session ID, or
+  request ID from an earlier task.
+- Run `doctor` and `devices` before choosing a target.
+- Attach before network or database inspection.
+- Keep the owning attachment active while using database snapshots.
+- Treat `code` and `retryable` as structured error fields.
+- An empty list is evidence to investigate, not proof that no traffic occurred.
 
-   ```bash
-   lynx --version
-   lynx doctor --json
-   lynx devices --json
-   ```
-
-2. Attach to the debuggable app. Android uses the device serial and package;
-   the iOS Simulator uses the `ios-simulator:<UDID>` device form:
-
-   ```bash
-   lynx attach emulator-5554 dev.lynx.dummyapp
-   # or: lynx attach ios-simulator:<UDID> dev.lynx.dummyapp
-   lynx status
-   ```
-
-3. Keep the attach session alive while using database snapshots and queries.
-   A snapshot is session-owned and cannot be queried after detach.
-
-`devices --json` reports Android and iOS Simulator availability together. Use
-its stable `id`; do not attach a shutdown or unavailable simulator.
-
-## Database investigation
-
-Discover database IDs before taking a snapshot. Use the exact app-relative ID
-returned by the command; do not shorten `databases/foo.db` to `foo.db`.
+## First run
 
 ```bash
-lynx db list --platform android --device emulator-5554 \
-  --package dev.lynx.dummyapp --json
-lynx db snapshot databases/dummyapp.db \
-  --platform android --device emulator-5554 \
-  --package dev.lynx.dummyapp --json
+lynx --version
+lynx doctor --json
+lynx devices --json
+lynx network ca show --json
 ```
 
-For iOS Simulator, keep the same command names and use the simulator UDID:
+If ADB is missing, install Android SDK platform-tools and make the `adb`
+command available to the shell, then rerun `doctor`. Lynx checks conventional
+SDK locations; do not assume that an environment variable is required.
+
+For HTTPS, create the host CA and read its path:
 
 ```bash
-lynx db list --platform ios --simulator <simulator-udid> \
-  --bundle-id dev.lynx.dummyapp --json
-lynx db snapshot Documents/dummyapp.db --platform ios \
-  --simulator <simulator-udid> --bundle-id dev.lynx.dummyapp --json
+lynx network ca install --json
+lynx network ca show --json
 ```
 
-Read `snapshot_id` from the response, then inspect schema and data:
+The native command does not install trust on a device. Copy `pemPath` from the
+response and complete the platform flow:
+
+- Android: convert the PEM to DER, push it with `adb`, then use Settings →
+  Encryption & credentials → Install a certificate → **CA certificate**.
+  Android 7/API 24+ debug apps must opt into user CAs with Network Security
+  Configuration.
+- iOS Simulator: `xcrun simctl keychain <simulator-udid> add-root-cert
+  <pemPath>`, then enable full trust in Certificate Trust Settings if requested.
+- Physical iOS: not supported by the current native Lynx attachment path 🚧.
+
+Compare the platform fingerprint with `lynx network ca show --json`. Do not
+invent target-specific `lynx network ca install --android` or
+`--ios-simulator` flags; they are planned, not implemented.
+
+## Attach
+
+Android:
 
 ```bash
-lynx db tables --snapshot <snapshot_id> --json
-lynx db schema --snapshot <snapshot_id> --json
-lynx db query --snapshot <snapshot_id> \
-  'SELECT * FROM network_events ORDER BY id DESC' --json
+lynx attach <adb-serial> <application-id> --json
+lynx status --json
 ```
 
-Only read-only SQL is accepted. Use explicit projections and predicates when
-the result may be large. Treat `consistent: false` as a WAL-coherence warning,
-not as proof that the database is unusable.
+iOS Simulator:
+
+```bash
+lynx attach ios-simulator:<simulator-udid> <bundle-id> --json
+lynx status --json
+```
+
+Do not provide a fabricated PID. Lynx resolves the process for the selected
+target and package.
 
 ## Network investigation
 
-The native executable supports persistent HTTP/1.1, HTTPS MITM, HTTP/2, and
-WebSocket-over-TLS capture. Start it
-in one shell and query it from another:
+Start capture, exercise the app, then inspect the same capture from any shell:
 
 ```bash
 lynx network start --json
 lynx network doctor --json
-lynx network list --json
+
+# Trigger the app request here.
 lynx network snapshot --json
+lynx network list --json
 ```
 
-`network list` is a session catalog. Use the returned `session_id` with
-`network list --session <session_id>` to retrieve verified app-only exchanges;
-use a request ID from that response with `network get` for complete
-request/response bodies, headers, timing, failures, and WebSocket frames.
-Capture requires the app to use the Android system proxy and trust the
-Lynx CA for HTTPS; direct/native sockets, certificate pinning, and QUIC/HTTP3
-are reported as limitations rather than silently treated as captured.
+`network list` without a session is a compact session catalog. Use the returned
+session ID for app-scoped exchanges, then retrieve an individual exchange when
+needed:
 
-The native executable also persists attach state and network evidence. Its first
-network run creates `$HOME/.lynx/certs/daemon.pem`; install that CA in the
-debuggable app/device before HTTPS capture. QUIC/HTTP3 remains under
-construction 🚧 and must be reported as a native limitation.
+```bash
+lynx network list --session <session_id> --json
+lynx network get <request_id> --json
+```
 
-## Agent operating rules
+Supported evidence includes HTTP/1.1, HTTPS MITM, HTTP/2, and WebSocket-over-
+TLS. Direct/native sockets, certificate pinning, and QUIC/HTTP/3 are reported as
+limitations. Lynx does not require app proxy code or a VPN/TUN service.
 
-- Prefer `--json` for one response and `--jsonl` for streams when available.
-- Treat `code` and `retryable` fields as the error contract; never parse human
-  prose when a structured field exists.
-- Keep `device`, `package`, database IDs, snapshot IDs, and request IDs exactly
-  as returned (including case).
-- Do not mutate app data: Lynx database commands are read-only.
-- Redact secrets from logs and do not persist network bodies outside the
-  evidence path requested by the user.
-- If a command returns an empty list, check `status`, attachment, proxy state,
-  and timing before concluding that the app made no request.
+Stop capture before switching targets:
 
-For the full command contract and platform details, see `docs/COMMANDS.md` in
-the source repository or the online project documentation.
+```bash
+lynx network stop --json
+lynx detach --json
+```
+
+## Database investigation
+
+Discover the exact app-relative ID, then snapshot it:
+
+```bash
+lynx db list --platform android --device <adb-serial> \
+  --package <application-id> --json
+lynx db snapshot databases/app.db --platform android \
+  --device <adb-serial> --package <application-id> --json
+```
+
+Read the local `path` from the snapshot response and use it while the attach
+session remains active:
+
+```bash
+lynx db tables <snapshot_path> --json
+lynx db schema <snapshot_path> --json
+lynx db query <snapshot_path> \
+  'SELECT * FROM messages ORDER BY id DESC' --json
+```
+
+iOS Simulator uses the same command names:
+
+```bash
+lynx db list --platform ios --simulator <simulator-udid> \
+  --bundle-id <bundle-id> --json
+lynx db snapshot Documents/app.db --platform ios \
+  --simulator <simulator-udid> --bundle-id <bundle-id> --json
+```
+
+Only read-only SQL is accepted. Preserve NULL, BLOB, and column values exactly
+as returned. Do not query a snapshot after its owning attachment is detached.
+
+## Evidence handling
+
+- Save the complete JSON response before summarizing it.
+- Preserve `session_id`, `request_id`, `snapshot_id`, and database paths.
+- Redact secrets before sending evidence to another system.
+- Report the target, protocol, status/failure, timing, and body availability.
+- If capture is empty, check attachment, session, proxy state, CA trust, and
+  whether the app generated traffic after capture started.

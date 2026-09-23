@@ -4,7 +4,9 @@
 
 ## Product
 
-Lynx is a standalone CLI and optional TUI that captures **network history** and **SQLite database state/history** from debuggable Android applications and exposes that evidence as structured output for developers and AI agents.
+Lynx is a standalone CLI that captures **network history** and **SQLite database
+state/history** from debuggable Android applications and iOS Simulators and
+exposes that evidence as structured output for developers and AI agents.
 
 ```text
 running debuggable Android app
@@ -27,7 +29,7 @@ running debuggable Android app
 
 ## Foundational decisions
 
-1. Debuggable Android apps only.
+1. Debuggable Android apps and iOS Simulators; physical iOS remains planned.
 2. **Network foundation = proxy capture.**
 3. **Database foundation = SQLite snapshot/observer.**
 4. No Android Studio runtime dependency.
@@ -36,7 +38,7 @@ running debuggable Android app
 7. JVMTI may be added later only for attribution/call stacks.
 8. Public CLI schemas belong to Lynx.
 9. The Evidence Timeline is a first-class abstraction from day one.
-10. Network/DB history must remain queryable after reproduction within retention limits.
+10. Network/DB evidence remains queryable for the owning attachment session.
 
 The foundational host layer is source-independent: network proxy events and
 SQLite snapshots publish canonical evidence into a bounded Evidence Timeline.
@@ -46,19 +48,22 @@ JVMTI/ART is not required for either path.
 ## Core workflows
 
 ```bash
-lynx attach --device emulator-5554 --package com.example.app --json
+lynx attach emulator-5554 com.example.app --json
 
 lynx network start --json
-lynx network list --json
-lynx network get req_42 --json
+lynx network snapshot --json
+lynx network list --session <session_id> --json
+lynx network get <request_id> --json
 
 lynx db list --platform android --device emulator-5554 --package com.example.app --json
 lynx db snapshot databases/app.db --platform android --device emulator-5554 --package com.example.app --json
-lynx db query --snapshot snap_10 "SELECT * FROM pending_actions" --json
+lynx db query <snapshot_path> "SELECT * FROM pending_actions" --json
 ```
 
-For an iOS Simulator, keep `db list` and `db snapshot` and select the target
-with `--platform ios --simulator <simulator-udid> --bundle-id <bundle-id>`.
+For an iOS Simulator, attach with
+`lynx attach ios-simulator:<simulator-udid> <bundle-id> --json`, then keep the
+same network commands. For databases, select the target with
+`--platform ios --simulator <simulator-udid> --bundle-id <bundle-id>`.
 
 The agent should be able to reason:
 
@@ -80,7 +85,8 @@ DB snapshot after request has no userId=42
 - timings;
 - filters;
 - structured JSON/JSONL;
-- explicit CA/pinning/proxy-bypass diagnostics.
+- explicit CA/pinning/proxy-bypass diagnostics;
+- Android and iOS Simulator target attribution.
 
 ### Database
 - discover SQLite DBs via ADB + `run-as`;
@@ -88,11 +94,18 @@ DB snapshot after request has no userId=42
 - host-side SQLite query/schema inspection;
 - read-only snapshot/table/schema/query inspection.
 
-### Not MVP
+### Not yet supported
 - JVMTI/call stacks;
 - Android Studio inspectors;
 - Layout Inspector;
-- iOS network capture;
 - MCP;
 - DB writes;
 - request mocking.
+
+## Public documentation
+
+- [README](../README.md): installation, workflows, FAQ, and evidence examples.
+- [AI-readable map](../llms.txt): concise links for documentation-aware agents.
+- [Command reference](../docs/COMMANDS.md): JSON contracts and exact commands.
+- [Agent skill](../docs/agent-skill/SKILL.md): vendor-neutral operating procedure.
+- [Roadmap](ROADMAP.md): supported and under-construction capabilities.

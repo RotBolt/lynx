@@ -3,6 +3,10 @@
 > This is the historical daemon-protocol smoke test. The supported developer
 > distribution is the standalone native KMP executable documented in
 > `docs/distribution/native.md`; this file remains for JVM regression coverage.
+>
+> For the public native workflow, use the commands in the root `README.md` or
+> `docs/COMMANDS.md`. The legacy JVM examples below intentionally retain their
+> old command syntax.
 
 Validated on macOS with an Android emulator (`emulator-5554`) and the
 debuggable package `ai.sarvam.prep.app`.

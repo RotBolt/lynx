@@ -1,250 +1,526 @@
 # Lynx 🐾
 
-> Agent-native network and SQLite inspection for debuggable Android apps.
+> Agent-native, read-only network and SQLite inspection for debuggable mobile apps.
 
-[![Build](https://img.shields.io/badge/build-Gradle-02303A?logo=gradle)](https://gradle.org/)
-[![Platform](https://img.shields.io/badge/host-macOS-lightgrey)](lynx-spec/FEATURE_REQUIREMENTS.md)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
-[![CI](https://github.com/RotBolt/lynx/actions/workflows/ci.yml/badge.svg)](https://github.com/RotBolt/lynx/actions/workflows/ci.yml)
+[![Host](https://img.shields.io/badge/host-macOS-lightgrey)](lynx-spec/FEATURE_REQUIREMENTS.md)
 
-Lynx is a vendor-agnostic, terminal-first inspector that lets developers and
-AI agents attach to a debuggable Android app, observe network traffic, inspect
-SQLite state, and consume the results as versioned JSON or JSONL.
+Lynx is a vendor-neutral command-line inspector. It lets a developer or an AI
+agent attach to a debuggable app, capture supported network traffic, inspect
+SQLite state, and consume deterministic JSON responses. Android Studio is not
+required. The app does not need Lynx-specific proxy code, a VPN/TUN service, or
+a particular HTTP client.
 
-It does not require Android Studio, a VPN/TUN service, application proxy code,
-or a particular AI vendor.
+## Why Lynx helps AI agents 🧠
+
+AI agents need runtime facts, not guesses from source code or an unscoped proxy
+stream. Lynx returns target identity, process attribution, protocol,
+request/response data, timing, and database results as structured JSON. This
+lets an agent verify what happened before suggesting a fix.
 
 ## What works today ✅
 
-- ADB-based attach with automatic device/package PID discovery.
-- Session continuity when the app process restarts.
-- HTTP/1.1 and HTTPS CONNECT MITM capture.
-- HTTP/2 capture, including complete headers and bodies.
-- WebSocket upgrade and frame capture.
-- Complete request/response retrieval through `network get`.
-- SQLite discovery, WAL-aware snapshots, schema inspection, and read-only SQL.
-- Transactional Android system-proxy apply/restore.
-- Structured capability, trust, bypass, and unsupported-protocol diagnostics.
-- Android CA staging, iOS Simulator installation, and physical-iOS profile generation.
+- Native `lynx` executable for macOS Apple Silicon.
+- Android and iOS Simulator device discovery.
+- Attach/detach with persistent state across independent shell invocations.
+- HTTP/1.1, HTTPS MITM, HTTP/2, and WebSocket-over-TLS capture.
+- Session-scoped network snapshots and complete exchange lookup.
+- SQLite discovery, snapshots, schema inspection, and read-only SQL.
+- Explicit CA onboarding and proxy cleanup.
+- Vendor-neutral agent instructions bundled with the release archive.
 
-## Quick start: use the released executable 🚀
+Windows support, physical iOS capture, QUIC/HTTP/3, and continuous watch
+streams remain under construction 🚧.
 
-Download the native `lynx` executable from the
-[latest GitHub release](https://github.com/RotBolt/lynx/releases/latest). No
-repository checkout, Gradle build, JAR, or JVM is needed at runtime. The
-current snapshot provides database inspection and persisted attach state on
-macOS Apple Silicon and Linux x64; Windows support is under construction 🚧.
+## Lynx at a glance
 
-### macOS Apple Silicon
+| Question | Answer |
+| --- | --- |
+| What is Lynx? | A vendor-neutral CLI for read-only network and SQLite inspection. |
+| Who uses it? | Developers and AI agents debugging a debuggable mobile app. |
+| Does it require Android Studio? | No. Lynx uses ADB and Xcode command-line tools. |
+| Does the app need Lynx proxy code? | No. The app keeps its normal Ktor, OkHttp, URLSession, or other networking stack. |
+| Is database access read-only? | Yes. Lynx snapshots and permits read-only SQL only. |
+| Which targets are supported? | Android devices/emulators and iOS Simulators from a macOS host. |
+| What does output look like? | Stable JSON envelopes with target identity, attribution, timing, payload, and errors. |
+
+Lynx is an inspection boundary, not an application SDK. Attach the target,
+start a capture, exercise the app, and query the returned evidence.
+
+## Compatibility
+
+| Host and target | Attach | Network | SQLite | Status |
+| --- | --- | --- | --- | --- |
+| macOS Apple Silicon + Android emulator/device | ✅ | HTTP/1.1, HTTPS, HTTP/2, WebSocket | ✅ | Supported |
+| macOS Apple Silicon + iOS Simulator | ✅ | HTTP/1.1, HTTPS, HTTP/2, WebSocket | ✅ | Supported |
+| macOS + physical iOS device | 🚧 | 🚧 | 🚧 | Under construction 🚧 |
+| Linux x64 + Android | 🚧 | Release/runtime smoke | 🚧 | Under construction 🚧 |
+| Windows | 🚧 | 🚧 | 🚧 | Under construction 🚧 |
+
+Applications must be debuggable. Direct sockets, certificate pinning, and
+QUIC/HTTP/3 can bypass a host proxy and are reported as limitations rather than
+invented captures.
+
+## Sample command output
+
+### Android network snapshot
+
+Run after `network start` and after exercising the app:
 
 ```bash
-mkdir -p "$HOME/.local/bin"
-curl -fL \
-  https://github.com/RotBolt/lynx/releases/download/v0.1.0-SNAPSHOT/lynx-macos-arm64.tar.gz \
-  -o /tmp/lynx.tar.gz
-tar -xzf /tmp/lynx.tar.gz -C "$HOME/.local/bin"
-chmod +x "$HOME/.local/bin/lynx"
-export PATH="$HOME/.local/bin:$PATH"
+lynx network snapshot --json
+```
+
+Sample response:
+
+```json
+{
+  "protocol_version": 1,
+  "schema_version": "lynx.v2",
+  "type": "network_snapshot",
+  "session_id": "capture_mue4nzwz",
+  "through_sequence": 18,
+  "exchanges": [
+    {
+      "requestId": "req_mue4o8yf_3",
+      "protocol": "HTTP/2",
+      "request": {
+        "method": "GET",
+        "url": "https://jsonplaceholder.typicode.com/todos/1?source=lynx-sample-http2"
+      },
+      "response": {
+        "status": 200,
+        "body": "{\n  \"userId\": 1,\n  \"id\": 1,\n  \"title\": \"delectus aut autem\",\n  \"completed\": false\n}"
+      },
+      "attribution": {
+        "status": "verified",
+        "deviceId": "emulator-5554",
+        "applicationId": "dev.lynx.dummyapp",
+        "processId": 28623
+      }
+    }
+  ],
+  "in_flight_count": 0
+}
+```
+
+### iOS Simulator network snapshot
+
+Use the same command after attaching with the `ios-simulator:<UDID>` target:
+
+```bash
+lynx network snapshot --json
+```
+
+Sample response:
+
+```json
+{
+  "protocol_version": 1,
+  "schema_version": "lynx.v2",
+  "type": "network_snapshot",
+  "session_id": "capture_mue4y4hr",
+  "through_sequence": 23,
+  "exchanges": [
+    {
+      "requestId": "req_mue4yf3g_1",
+      "protocol": "HTTP/2",
+      "request": {
+        "method": "GET",
+        "url": "https://jsonplaceholder.typicode.com/todos/1?source=lynx-sample-http2"
+      },
+      "response": {
+        "status": 200,
+        "body": "{\n  \"userId\": 1,\n  \"id\": 1,\n  \"title\": \"delectus aut autem\",\n  \"completed\": false\n}"
+      },
+      "attribution": {
+        "status": "verified",
+        "deviceId": "25CD22C1-E1F2-417F-87BA-09D7600F3B93",
+        "applicationId": "dev.lynx.dummyapp",
+        "processId": 16142
+      }
+    }
+  ],
+  "in_flight_count": 0
+}
+```
+
+### Database query and schema
+
+After `db snapshot`, use its returned path:
+
+```bash
+lynx db schema <snapshot_path> --json
+lynx db query <snapshot_path> \
+  'SELECT transport, status, response_body, error FROM network_events' --json
+```
+
+Sample query response:
+
+```json
+[
+  {
+    "id": 1,
+    "transport": "HTTP_2",
+    "method": "GET",
+    "url": "https://jsonplaceholder.typicode.com/todos/1?source=lynx-sample-http2",
+    "status": 200,
+    "response_body": "{\n  \"userId\": 1,\n  \"id\": 1,\n  \"title\": \"delectus aut autem\",\n  \"completed\": false\n}",
+    "error": null
+  }
+]
+```
+
+The network response and persisted database row can now be compared directly.
+
+## Install the released executable 🚀
+
+This is the standard installation path for developers and AI agents. Download
+the native release archive for your host and follow the first-run checks below.
+
+### Requirements
+
+| Host | Required tools | Status |
+| --- | --- | --- |
+| macOS Apple Silicon | `adb` from Android SDK platform-tools; `xcrun` from Xcode Command Line Tools | Supported ✅ |
+| Linux x64 | `adb` from Android SDK platform-tools | Release/runtime smoke only 🚧 |
+| Windows | — | Under construction 🚧 |
+
+For Android, install the Android SDK platform-tools. Lynx checks the standard
+SDK locations and the normal command search path; no `ANDROID_HOME` export is
+required for the normal installation.
+
+For iOS Simulator support, install Xcode and its command-line tools:
+
+```bash
+xcode-select --install
+xcrun simctl list devices
+```
+
+### One-command install
+
+The repository installer detects the host, downloads the matching release
+archive, installs the `lynx` command and bundled AI skill under
+`$HOME/.local/bin`, and persists that directory in the user's shell profile.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/RotBolt/lynx/main/install.sh | bash
+```
+
+Open a new terminal after installation, then verify:
+
+```bash
+command -v lynx
 lynx --version
-```
-
-The archive also installs the vendor-neutral agent instructions at
-`$HOME/.local/bin/lynx-skill/SKILL.md`. Point your agent harness at that file,
-or copy it into the harness's skill directory; it explains the attach,
-database, JSON, and network-evidence workflow without assuming a particular
-editor or model.
-
-Linux x64 packaging is available for maintainer/runtime smoke work, but remains
-unverified and unpublished for app-scoped device capture 🚧.
-Lynx discovers Android SDK platform-tools from SDK configuration, standard
-locations, or `PATH`; use `lynx doctor --json` for exact diagnostics.
-
-Attach to a debuggable app and inspect its database:
-
-```bash
-lynx devices
 lynx doctor --json
-lynx attach emulator-5554 dev.lynx.dummyapp
-lynx status
-lynx db list --platform android --device emulator-5554 \
-  --package dev.lynx.dummyapp
-lynx db snapshot databases/dummyapp.db \
-  --platform android --device emulator-5554 --package dev.lynx.dummyapp
+lynx devices --json
 ```
 
-The same `db list` and `db snapshot` commands work with an iOS Simulator by
-changing `--platform` to `ios` and passing its UDID and bundle identifier:
+To install a specific release instead of the latest one:
 
 ```bash
-lynx db list --platform ios --simulator <simulator-udid> \
-  --bundle-id dev.lynx.dummyapp
-lynx db snapshot Documents/dummyapp.db --platform ios \
-  --simulator <simulator-udid> --bundle-id dev.lynx.dummyapp
+curl -fsSL https://raw.githubusercontent.com/RotBolt/lynx/main/install.sh | \
+  bash -s -- v0.1.0-SNAPSHOT
 ```
 
-The native executable supports persistent HTTP/1.1 and HTTPS MITM capture across
-independent invocations:
+The installer verifies a published SHA-256 checksum when the release provides
+one. The `.kexe` filename is a build artifact; released users run the archive's
+`lynx` command.
+
+## Install the AI-agent skill 🤖
+
+The archive installs vendor-neutral instructions at:
+
+```text
+$HOME/.local/bin/lynx-skill/SKILL.md
+```
+
+Configure the agent harness with this bundled skill. A portable setup that does
+not assume a specific vendor is:
 
 ```bash
-lynx network start --json
-lynx network list --json                 # session catalog
-lynx network snapshot --json             # active session, finite view
-lynx network list --session <session_id> --json
-lynx network doctor --json
-lynx network stop --json
+mkdir -p "$HOME/.config/lynx/skills"
+ln -sfn "$HOME/.local/bin/lynx-skill/SKILL.md" \
+  "$HOME/.config/lynx/skills/SKILL.md"
 ```
 
-The first run creates a CA at `$HOME/.lynx/certs/daemon.pem`; install it in the
-debuggable app/device trust store for HTTPS. Native HTTP/2 and TLS-WebSocket
-capture are included; QUIC/HTTP3 remains under construction 🚧.
+Or copy the file into the skill/rules directory used by your agent. Examples:
 
-Manage the native CA material without a JVM:
+| Agent | Link target |
+| --- | --- |
+| Codex | `~/.codex/skills/lynx/SKILL.md` |
+| Claude Code | `~/.claude/skills/lynx/SKILL.md` |
+| Cursor | `<project>/.cursor/rules/lynx.mdc` |
+| Other harness | Its documented project or global skill directory |
+
+## First-run setup 🔧
+
+Run these checks before attaching:
+
+```bash
+lynx doctor --json
+lynx devices --json
+```
+
+`doctor` reports ADB, Xcode, proxy, CA, and runtime diagnostics. `devices`
+reports Android devices and iOS Simulators together. Start or unlock the target
+device before attaching it.
+
+### Trust the Lynx CA for HTTPS
+
+The native CA commands create or display the host CA. They do not install a
+certificate on Android or Apple devices automatically yet 🚧:
 
 ```bash
 lynx network ca show --json
 lynx network ca install --json
-lynx network ca remove --json
 ```
 
-### JVM compatibility backend
-
-The Gradle/JVM distribution remains available for contributors and compatibility
-testing. It is not required by developers or AI agents at runtime, and it is not
-the primary network distribution. Use the standalone native `lynx` executable
-above for HTTP/1.1, HTTPS CONNECT, HTTP/2, and plain WebSocket capture.
-
-To run the compatibility backend from a source checkout:
+#### Android emulator or device
 
 ```bash
-./gradlew test :apps:cli:installJvmDist --no-daemon
-./apps/cli/build/install/cli-jvm/bin/cli daemon
+lynx network ca show --json
+openssl x509 -in <pemPath> -outform DER -out /tmp/Lynx-Local-CA.cer
+adb -s <adb-serial> push /tmp/Lynx-Local-CA.cer \
+  /sdcard/Download/Lynx-Local-CA.cer
 ```
 
-In another terminal:
+On the target, open **Settings → Security & privacy → More security settings →
+Encryption & credentials → Install a certificate → CA certificate**. Select
+the copied file. Choose **CA certificate**, not VPN or app credentials. Verify
+the fingerprint under **Trusted credentials → User**. Android 7/API 24+
+debug apps must explicitly trust user CAs through Network Security Config.
+
+#### iOS Simulator
 
 ```bash
-LYNX=./apps/cli/build/install/cli-jvm/bin/cli
-$LYNX doctor
-$LYNX devices
-$LYNX attach --device emulator-5554 --package com.example.app --json
-$LYNX network start --json
-$LYNX network doctor --json
-$LYNX network list --json
+xcrun simctl keychain <booted-simulator-udid> add-root-cert <pemPath>
 ```
 
-The app must be debuggable and trust the Lynx CA for HTTPS interception. Use the
-onboarding commands when needed:
+Then enable full trust in **Settings → General → About → Certificate Trust
+Settings** if requested. Physical iOS installation and capture remain under
+construction 🚧; a real device requires a `.cer`/configuration profile and
+explicit full-trust approval in Settings.
+
+## Use Lynx with your own app 👩‍💻
+
+The app must be debuggable and running on a supported target. Lynx does not
+need application proxy code. Use the normal app networking stack.
+
+### Attach
+
+Android uses the device serial and application ID:
 
 ```bash
-$LYNX network ca show --json
-$LYNX network ca install --android emulator-5554 --json
-$LYNX network ca install --ios-simulator <simulator-udid> --json
+lynx attach emulator-5554 com.example.app --json
+lynx status --json
 ```
 
-## Build from source and verify the sample app 🛠️
-
-This section is for contributors and maintainers who want to build Lynx or run
-the Android/iOS sample app. Regular developers should use the
-released executable above.
-
-Build the native executable locally on macOS Apple Silicon:
+iOS Simulator uses the simulator UDID prefixed with `ios-simulator:`:
 
 ```bash
-./gradlew :apps:cli:linkReleaseExecutableMacosArm64 --no-daemon
-./apps/cli/build/bin/macosArm64/releaseExecutable/lynx.kexe --version
+lynx attach ios-simulator:<booted-simulator-udid> com.example.app --json
+lynx status --json
 ```
 
-For the complete Android attach, HTTP/2, database, restart, and detach smoke
-test, see [the manual smoke test](lynx-spec/MANUAL_SMOKE_TEST.md). For the
-complete iOS Simulator build/install/capture/query sequence, see the
-[iOS Simulator smoke test](docs/IOS_SMOKE_TEST.md). The short iOS sample-app setup
-is:
+Do not invent a PID. Lynx resolves the process from the target and package.
+
+### Inspect network traffic 🌐
+
+Start capture in one shell. Exercise the app in another shell or in its UI.
+All commands share the active attachment and capture session:
 
 ```bash
-dummyapp/iosApp/build-simulator.sh
-xcrun simctl install <simulator-udid> \
-  dummyapp/iosApp/build/Debug-iphonesimulator/LynxSampleApp.app
+lynx network start --json
+lynx network doctor --json
+
+# Trigger an HTTP/1.1, HTTP/2, or WebSocket request in the app.
+lynx network snapshot --json
+lynx network list --json
+lynx network stop --json
 ```
 
-The sample app emits HTTP/1.1, HTTP/2, and WebSocket exchanges and stores the
-corresponding evidence in SQLite. Native database smoke commands are documented
-in [native distribution](docs/distribution/native.md).
-
-## Database workflow 🗄️
+`network snapshot` is the current capture view. `network list` without a
+session is a compact session catalog; pass the returned session ID to retrieve
+that session's app-scoped exchanges:
 
 ```bash
-$LYNX db list --platform android --device emulator-5554 \
-  --package ai.sarvam.prep.app --json
-$LYNX db snapshot databases/conversation.db --platform android \
-  --device emulator-5554 --package ai.sarvam.prep.app --json
-
-# Use the snapshot_id returned above.
-$LYNX db tables --snapshot <snapshot_id> --json
-$LYNX db schema --snapshot <snapshot_id> --json
-$LYNX db query --snapshot <snapshot_id> \
-  'SELECT id, role, text FROM messages LIMIT 10' --json
+lynx network list --session <session_id> --json
+lynx network get <request_id> --json
 ```
 
-Queries are read-only. Results preserve SQLite NULL, INTEGER, REAL, TEXT, and
-BLOB values using stable JSON representations. Snapshots are valid only while
-their owning Lynx session remains attached.
+Results are scoped to the attached device and application. Unsupported or
+bypassed traffic is reported explicitly: direct/native sockets, certificate
+pinning, and QUIC/HTTP/3 do not become false captures.
 
-## Agent contract 🤖
+### Inspect database 🗄️
 
-Every finite machine-facing response includes `protocol_version`,
-`schema_version`, `type`, and structured errors. Network evidence includes the
-request ID, headers, body, status/failure, timing, protocol, and WebSocket
-frames where applicable. Database responses include snapshot/database IDs,
-columns, rows, and explicit BLOB encoding.
+Discover the exact app-relative database ID first:
 
-See [docs/COMMANDS.md](docs/COMMANDS.md) for the complete command contract and
-[lynx-spec/FEATURE_REQUIREMENTS.md](lynx-spec/FEATURE_REQUIREMENTS.md) for the
-versioned requirements.
+```bash
+lynx db list --platform android --device emulator-5554 \
+  --package com.example.app --json
+```
 
-## Scope and limitations ⚠️
+Snapshot using the full ID returned by `db list`:
 
-- Debuggable Android applications are the MVP target.
-- QUIC/HTTP3 is unsupported.
-- Direct/native sockets that bypass the Android system proxy cannot be captured.
-- HTTPS requires user-approved CA trust and may be blocked by certificate pinning.
-- WAL snapshots can report `consistent=false` when coherence cannot be proven.
-- Database operations are read-only.
+```bash
+lynx db snapshot databases/app.db \
+  --platform android --device emulator-5554 \
+  --package com.example.app --json
+```
 
-### 🚧 Under construction
+The response includes a local snapshot path. Use that path for read-only
+inspection while the owning Lynx attachment remains active:
 
-The following commands and features are specified for later milestones but are
-not part of the current working CLI:
+```bash
+lynx db tables <snapshot_path> --json
+lynx db schema <snapshot_path> --json
+lynx db query <snapshot_path> \
+  'SELECT * FROM messages ORDER BY id DESC' --json
+```
 
-- `lynx timeline ...` merged timeline queries.
-- `lynx network watch --jsonl` continuous streaming mode.
-- `lynx db snapshots ...` snapshot history listing.
-- `lynx db diff ...` and `lynx db watch ...`.
-- TUI views, persistent evidence export/import, and optional JVMTI enrichment.
-- physical iOS capture and complete simulator transport parity; simulator
-  attach/database and host-proxy capture are available, with localhost/bypass
-  cases 🚧 under construction.
-- automated physical-device iOS capture and device-side database access 🚧
-  under construction.
+For iOS Simulator, use the same commands with the simulator target:
+
+```bash
+lynx db list --platform ios --simulator <simulator-udid> \
+  --bundle-id com.example.app --json
+lynx db snapshot Documents/app.db --platform ios \
+  --simulator <simulator-udid> --bundle-id com.example.app --json
+```
+
+Database commands are read-only. Snapshot IDs and paths are session-owned and
+must not be reused after detach.
+
+## Under construction 🚧
+
+Target-specific CA installation commands are planned:
+
+```text
+lynx network ca install --android <adb-serial>       🚧
+lynx network ca install --ios-simulator <simulator>  🚧
+```
+
+Physical iOS capture, Windows support, QUIC/HTTP/3, and continuous watch
+streams are also under construction.
+
+## Uninstall and clean up 🧹
+
+Stop capture and detach before removing the executable:
+
+```bash
+lynx network stop --json || true
+lynx detach --json || true
+lynx network ca remove --json || true
+rm -rf "$HOME/.local/bin/lynx" "$HOME/.local/bin/lynx-skill"
+rm -rf "$HOME/.lynx"
+```
+
+Remove the Lynx PATH line added by the installer from your shell profile, then
+open a new shell. Android and iOS device trust is separate: remove the
+Lynx CA from Android Settings and the Simulator keychain if you no longer want
+it trusted.
+
+## Local and development installation 🛠️
+
+Contributors can install the native executable from a checkout using the same
+installer:
+
+```bash
+./install.sh --local
+```
+
+To test release installation behavior from a checkout, force the release path:
+
+```bash
+./install.sh --remote
+```
+
+The remote path requires a published release asset for the current host. Build
+and sample-app validation instructions are in the contributor documentation.
+
+## Build the sample app (contributors) 🛠️
+
+Regular developers do not need this section. It is for validating Lynx against
+the repository's sample app. The sample app has explicit HTTP/1.1, HTTP/2, and
+WebSocket controls, uses real public endpoints, and contains no Lynx proxy
+configuration or local fixture server.
+
+See:
+
+- [Android sample-app smoke test](lynx-spec/MANUAL_SMOKE_TEST.md)
+- [iOS Simulator smoke test](docs/IOS_SMOKE_TEST.md)
+- [Native distribution and contributor build](docs/distribution/native.md)
+
+## Troubleshooting 🩺
+
+| Symptom | Check |
+| --- | --- |
+| `lynx: command not found` | `command -v lynx`; add `$HOME/.local/bin` to the shell profile and start a new shell. |
+| `ADB_NOT_FOUND` | Run `lynx doctor --json`; install Android SDK platform-tools and ensure `adb` is available to the shell. |
+| Empty network snapshot | Confirm attach, CA trust, proxy state, and that traffic occurred after `network start`. |
+| `HTTPS_MITM_ERROR` | Compare CA fingerprints; check debug user-CA trust and certificate pinning. |
+| Only system traffic appears | Reattach the intended package and query the session returned by that capture. |
+| Snapshot cannot be queried | Keep the owning attach session active; snapshots are not durable after detach. |
+
+## FAQ
+
+### How do I capture Ktor, OkHttp, Volley, or another client?
+
+Keep the app's normal networking code. Lynx observes supported traffic at the
+host proxy boundary, so capture is not coupled to one application library. The
+app still must trust the Lynx CA for HTTPS, and certificate pinning or direct
+native sockets can prevent decryption.
+
+### Does Lynx require proxy code, a VPN, or a TUN service in the app?
+
+No. Lynx is a host-side CLI. It configures the supported target's debug proxy
+path and records traffic outside the app process. No Lynx dependency is added
+to the app.
+
+### How do I inspect an Android SQLite database?
+
+Attach first, run `lynx db list` to obtain the exact app-relative database ID,
+snapshot that ID, then pass the returned local snapshot path to `db tables`,
+`db schema`, or `db query`. Keep the attachment active while querying.
+
+### How do I inspect an iOS Simulator app?
+
+Boot the Simulator, obtain its UDID from `lynx devices --json` or
+`xcrun simctl list devices`, then attach with
+`ios-simulator:<UDID>`. Install the host CA into that Simulator before an HTTPS
+capture.
+
+### Why is my capture empty?
+
+Check, in order: target is booted, package/bundle ID is correct, attach
+succeeded, `network start` completed, the request happened after start, the
+session ID is the one being queried, and the app trusts the Lynx CA. Empty
+output means no exchange was admitted to that session; it does not prove the
+app made no request.
+
+### What does `network snapshot` return?
+
+It returns the current session view: `session_id`, `through_sequence`, captured
+`exchanges`, and `in_flight_count`. Use it for the active debugging turn. Use
+`network list` without a session to discover sessions, then
+`network list --session <id>` for that session's app-scoped exchanges.
 
 ## Documentation
 
+- [AI-readable documentation map](llms.txt)
+- [One-command installer](install.sh)
+- [Installation and native distribution](docs/distribution/native.md)
+- [AI-agent skill](docs/agent-skill/SKILL.md)
 - [Command reference](docs/COMMANDS.md)
 - [Architecture](lynx-spec/ARCHITECTURE.md)
 - [Implementation details](lynx-spec/IMPLEMENTATION.md)
-- [Manual smoke test](MANUAL_SMOKE_TEST.md)
-- [M1 smoke evidence](lynx-spec/MANUAL_SMOKE_TEST.md)
+- [Manual smoke test](lynx-spec/MANUAL_SMOKE_TEST.md)
 - [iOS Simulator smoke test](docs/IOS_SMOKE_TEST.md)
 - [Roadmap](lynx-spec/ROADMAP.md)
 - [Contributing](CONTRIBUTING.md)
-
-## Continuous integration 🧪
-
-Every push to `main`, pull request, and manual workflow dispatch runs the host
-unit/integration suite, shared sample-app tests, an Android emulator UI/integration
-smoke test, and an iOS Simulator UI/integration smoke test on macOS. Hosted
-runners without a compatible iOS Simulator runtime/SDK report a visible warning
-and skip only that platform UI smoke test; they do not report a false pass.
-Platform unit tests run in the corresponding Android and iOS jobs.
+- [Support](SUPPORT.md)
+- [Security](SECURITY.md)
 
 ## License
 

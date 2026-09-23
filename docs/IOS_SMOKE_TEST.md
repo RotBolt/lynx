@@ -48,7 +48,9 @@ shows the direct API result. Then start a separate Lynx capture run:
 
 ```bash
 $LYNX network ca show --json
-$LYNX network ca install --ios-simulator "$UDID" --json
+$LYNX network ca install --json
+# Copy pemPath from the response, then install it in the Simulator:
+xcrun simctl keychain "$UDID" add-root-cert <pemPath>
 $LYNX network start --json
 
 xcrun simctl terminate "$UDID" dev.lynx.dummyapp || true
@@ -85,10 +87,10 @@ $LYNX db list --platform ios --simulator "$UDID" \
 $LYNX db snapshot Documents/dummyapp.db --platform ios --simulator "$UDID" \
   --bundle-id dev.lynx.dummyapp --json
 
-# Copy the snapshot_id from the snapshot response.
-$LYNX db tables --snapshot <snapshot_id> --json
-$LYNX db schema --snapshot <snapshot_id> --json
-$LYNX db query --snapshot <snapshot_id> \
+# Copy the path from the snapshot response.
+$LYNX db tables <snapshot_path> --json
+$LYNX db schema <snapshot_path> --json
+$LYNX db query <snapshot_path> \
   'SELECT transport, status, response_body, error FROM network_events' --json
 ```
 

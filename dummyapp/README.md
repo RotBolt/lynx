@@ -1,7 +1,9 @@
-# Lynx Sample App
+# Lynx Sample App (contributor validation) 🛠️
 
-Small KMP sample application for manually exercising Lynx network and SQLite
-inspection. It is separate from the production Lynx modules.
+Small KMP sample application for validating Lynx network and SQLite inspection.
+It is separate from the production Lynx modules. Regular Lynx users should
+follow the release installation guide in [`../README.md`](../README.md) instead
+of building this app.
 
 Status: 🚧 under construction.
 
@@ -34,8 +36,10 @@ LYNX=lynx
 xcrun simctl boot "$UDID" || true
 ./iosApp/build-simulator.sh
 xcrun simctl install "$UDID" iosApp/build/Debug-iphonesimulator/LynxSampleApp.app
-$LYNX attach --device ios-simulator:$UDID --package dev.lynx.dummyapp --json
-$LYNX network ca install --ios-simulator "$UDID" --json
+$LYNX attach ios-simulator:$UDID dev.lynx.dummyapp --json
+$LYNX network ca install --json
+# Install pemPath manually with:
+xcrun simctl keychain "$UDID" add-root-cert <pemPath>
 $LYNX network start --json
 # Relaunch the app after the proxy is active, then press the desired protocol button.
 xcrun simctl terminate "$UDID" dev.lynx.dummyapp || true
@@ -44,9 +48,11 @@ sleep 10
 $LYNX network list --json
 $LYNX db list --platform ios --simulator "$UDID" \
   --bundle-id dev.lynx.dummyapp --json
-$LYNX db snapshot Documents/dummyapp.db --json
-$LYNX db tables --snapshot <snapshot-id> --json
-$LYNX db query --snapshot <snapshot-id> \
+$LYNX db snapshot Documents/dummyapp.db --platform ios \
+  --simulator "$UDID" --bundle-id dev.lynx.dummyapp --json
+# Read `path` from the snapshot response.
+$LYNX db tables <snapshot-path> --json
+$LYNX db query <snapshot-path> \
   'SELECT transport, status, response_body, error FROM network_events' --json
 $LYNX network stop --json
 ```
