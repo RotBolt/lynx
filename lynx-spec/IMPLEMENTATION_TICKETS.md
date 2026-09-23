@@ -31,6 +31,8 @@ Numbered tickets depend on the preceding numbered ticket; 09 also requires WS.
 | M1.1-08 | Android relay/ownership | V6 Android + V0 both |
 | M1.1-WS | [Live WebSocket frames, including ping/pong](../docs/superpowers/plans/2026-09-22-live-websocket-capture.md); after 08, before 09 | Before-close reads + V0 + V6; separate checkpoint |
 | M1.1-09 | Session catalog, snapshot, scoped list/get; depends on WS | V7 + V6 both + V0 |
+| M1.1-09a | [Cross-target lifecycle cleanup](../docs/superpowers/bugs/2026-09-23-cross-target-capture-cleanup.md); persist capture target and never route iOS identifiers through ADB | iOS stop/detach regression + V7 + V0 |
+| M1.1-09b | [iOS snapshot and cleanup regression](../docs/superpowers/bugs/2026-09-23-ios-snapshot-and-cleanup.md); non-empty target snapshot plus host-only idempotent stop/detach | iOS positive/no-traffic snapshot cases + zero ADB cleanup + Android/DB V0 |
 | M1.1-10 | Extracted distribution and agent docs | V8 |
 
 No ticket may be marked complete from unit tests alone; follow the master plan's
