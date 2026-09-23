@@ -28,7 +28,9 @@ actual fun nativeTlsProvider(): NativeTlsProvider = object : NativeTlsProvider {
     override fun server(clientFd: Int, certificatePath: String, privateKeyPath: String, enableHttp2: Boolean): NativeTlsConnection = memScoped {
         val context = SSL_CTX_new(TLS_server_method()) ?: error("unable to create TLS server context")
         if (enableHttp2) lynx_ssl_enable_h2_server(context) else lynx_ssl_enable_http1_server(context)
-        require(SSL_CTX_use_certificate_file(context, certificatePath, PEM) == 1)
+        // The leaf PEM also contains Lynx Local CA. Send the full chain so
+        // Android/Conscrypt clients can build a path to the installed root.
+        require(SSL_CTX_use_certificate_chain_file(context, certificatePath) == 1)
         require(SSL_CTX_use_PrivateKey_file(context, privateKeyPath, PEM) == 1)
         val ssl = SSL_new(context) ?: error("unable to create TLS server session")
         require(SSL_set_fd(ssl, clientFd) == 1)

@@ -46,7 +46,7 @@ class PosixNativeCertificateAuthority(
             // reinstall). Never reuse a cached leaf signed by an older root: Android
             // then reports `certificate_unknown` even when the newly installed root
             // fingerprint is correct.
-            if (!exists(cert) || !exists(key) || !leafChainsTo(cert, ca) || !leafIncludesIssuer(cert)) {
+            if (!exists(cert) || !exists(key) || !leafChainsTo(cert, ca) || !leafIncludesIssuer(cert) || !leafHasSubjectAlternativeName(cert, host)) {
                 val temporary = "$root/.leaf-$safe.${getpid()}.${kotlin.time.Clock.System.now().toEpochMilliseconds()}"
                 val temporaryCert = "$temporary.pem"
                 val temporaryKey = "$temporary.key"
@@ -55,10 +55,10 @@ class PosixNativeCertificateAuthority(
                 val chain = "$temporary.chain.pem"
                 val san = if (host.matches(Regex("[0-9.]+"))) "IP:$host" else "DNS:$host"
                 try {
-                    PosixProcessRunner().run(listOf("sh", "-c", "printf '%s\\n' 'basicConstraints=critical,CA:FALSE' 'keyUsage=critical,digitalSignature,keyEncipherment' 'extendedKeyUsage=serverAuth' 'subjectKeyIdentifier=hash' 'authorityKeyIdentifier=keyid,issuer' 'subjectAltName=$san' > '$ext'"))
+                    PosixProcessRunner().run(listOf("sh", "-c", "printf '%s\\n' '[v3_leaf]' 'basicConstraints=critical,CA:FALSE' 'keyUsage=critical,digitalSignature,keyEncipherment' 'extendedKeyUsage=serverAuth' 'subjectKeyIdentifier=hash' 'authorityKeyIdentifier=keyid,issuer' 'subjectAltName=$san' > '$ext'"))
                     val keyResult = runner.run(listOf("openssl", "req", "-new", "-newkey", "rsa:2048", "-nodes", "-keyout", temporaryKey, "-out", csr, "-subj", "/CN=$host"))
                     require(keyResult.exitCode == 0) { "CA_LEAF_KEYGEN_FAILED host=$host: ${keyResult.stderr}" }
-                    val signResult = runner.run(listOf("openssl", "x509", "-req", "-in", csr, "-CA", "$root/daemon.pem", "-CAkey", "$root/daemon.key", "-CAcreateserial", "-out", temporaryCert, "-days", "365", "-extfile", ext))
+                    val signResult = runner.run(listOf("openssl", "x509", "-req", "-in", csr, "-CA", "$root/daemon.pem", "-CAkey", "$root/daemon.key", "-CAcreateserial", "-out", temporaryCert, "-days", "365", "-extfile", ext, "-extensions", "v3_leaf"))
                     require(signResult.exitCode == 0) { "CA_LEAF_SIGN_FAILED host=$host: ${signResult.stderr}" }
                     // Android/Conscrypt clients may not build a path from a user-installed
                     // anchor unless the server sends the issuing certificate. Serve the leaf
@@ -78,6 +78,11 @@ class PosixNativeCertificateAuthority(
 
     private fun leafIncludesIssuer(leaf: String): Boolean =
         runner.run(listOf("sh", "-c", "test \"$(grep -c 'BEGIN CERTIFICATE' '$leaf' 2>/dev/null)\" -ge 2")).exitCode == 0
+
+    private fun leafHasSubjectAlternativeName(leaf: String, host: String): Boolean {
+        val expected = if (host.matches(Regex("[0-9.]+"))) "IP Address:$host" else "DNS:$host"
+        return runner.run(listOf("openssl", "x509", "-in", leaf, "-noout", "-ext", "subjectAltName")).stdout.contains(expected)
+    }
 
     fun fingerprint(): String? = runner.run(listOf("openssl", "x509", "-in", ensureCa(), "-noout", "-fingerprint", "-sha256")).stdout.trim().substringAfter("=", "").replace(":", ":").takeIf(String::isNotBlank)
 

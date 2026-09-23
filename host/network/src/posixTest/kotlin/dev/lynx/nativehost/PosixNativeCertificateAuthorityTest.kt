@@ -66,6 +66,8 @@ class PosixNativeCertificateAuthorityTest {
         assertTrue(ca.endsWith("daemon.pem"))
         assertTrue(leaf.certificate.endsWith("leaf-127.0.0.1.pem"))
         assertEquals(0, PosixProcessRunner().run(listOf("sh", "-c", "test \"$(grep -c 'BEGIN CERTIFICATE' '${leaf.certificate}')\" -ge 2")).exitCode)
+        val san = PosixProcessRunner().run(listOf("openssl", "x509", "-in", leaf.certificate, "-noout", "-ext", "subjectAltName")).stdout
+        assertTrue(san.contains("IP Address:127.0.0.1"), "leaf must include SAN for Android hostname verification: $san")
         assertNotNull(authority.fingerprint())
     }
 
