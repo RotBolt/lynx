@@ -10,6 +10,11 @@ then requires a new `network list` exchange with the expected transport,
 status, and attached app metadata. The requests go directly from the sample app
 to public services; neither fixtures nor a local test server are involved.
 
+For the v2 agent contract, use `network snapshot` during capture and
+`network list --session <id>` for finite app/device-scoped results. Plain
+`network list` intentionally returns a session catalog, not every retained
+exchange.
+
 ## Prerequisites
 
 - A built native Lynx executable (`./gradlew :apps:cli:linkReleaseExecutableMacosArm64`).

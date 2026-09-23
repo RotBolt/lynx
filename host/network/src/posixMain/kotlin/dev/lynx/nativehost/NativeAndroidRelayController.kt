@@ -5,18 +5,16 @@ import kotlinx.cinterop.toKString
 import platform.posix.getenv
 import platform.posix.usleep
 
-/** Owns the optional device-local Android relay. Direct global-proxy mode remains the fallback
- * until a distribution bundles an ABI-matching relay binary. */
+/** Owns the device-local Android relay. Release archives bundle ABI-matched helpers;
+ * LYNX_ANDROID_RELAY_BINARY remains an explicit override for development. */
 @OptIn(ExperimentalForeignApi::class)
 class NativeAndroidRelayController(private val processes: NativeProcessRunner) {
     data class Lease(val remotePath: String, val relayPid: String, val relayPort: Int, val upstreamPort: Int)
 
-    fun available(): Boolean = getenv("LYNX_ANDROID_RELAY_BINARY")?.toKString()?.let { path ->
-        processes.run(listOf("test", "-x", path)).exitCode == 0
-    } == true
+    fun available(deviceSerial: String): Boolean = resolveBinary(deviceSerial) != null
 
     fun start(deviceSerial: String, packageName: String, pid: Int, hostPort: Int, captureId: String, captureToken: String): Lease {
-        val binary = getenv("LYNX_ANDROID_RELAY_BINARY")?.toKString()?.takeIf(String::isNotBlank)
+        val binary = resolveBinary(deviceSerial)
             ?: error("ANDROID_RELAY_UNAVAILABLE")
         val relayPort = getenv("LYNX_ANDROID_RELAY_PORT")?.toKString()?.toIntOrNull()?.takeIf { it in 1024..65535 } ?: 62007
         val remotePath = "/data/local/tmp/lynx/relay-${captureToken.replace(Regex("[^A-Za-z0-9_-]"), "_")}"
@@ -53,4 +51,24 @@ class NativeAndroidRelayController(private val processes: NativeProcessRunner) {
     }
 
     private fun quote(value: String) = "'" + value.replace("'", "'\\''") + "'"
+
+    private fun resolveBinary(deviceSerial: String): String? {
+        val override = getenv("LYNX_ANDROID_RELAY_BINARY")?.toKString()?.takeIf(String::isNotBlank)
+        if (override != null && processes.run(listOf("test", "-x", override)).exitCode == 0) return override
+
+        val executable = nativeExecutablePath() ?: return null
+        val root = executable.substringBeforeLast('/', missingDelimiterValue = ".")
+        val abiOutput = processes.run(listOf("adb", "-s", deviceSerial, "shell", "getprop", "ro.product.cpu.abilist")).stdout
+        val abis = abiOutput.trim().split(',').filter { it.isNotBlank() }
+        val candidates = (abis + listOf("arm64-v8a", "x86_64")).mapNotNull { abi ->
+            when {
+                abi == "arm64-v8a" -> "arm64-v8a"
+                abi == "x86_64" -> "x86_64"
+                else -> null
+            }
+        }.distinct()
+        return candidates
+            .map { "$root/android-relay/$it/lynx-android-relay" }
+            .firstOrNull { processes.run(listOf("test", "-x", it)).exitCode == 0 }
+    }
 }

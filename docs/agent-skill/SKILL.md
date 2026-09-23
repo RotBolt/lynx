@@ -72,7 +72,8 @@ not as proof that the database is unusable.
 
 ## Network investigation
 
-The native executable supports persistent HTTP/1.1, HTTPS MITM, and HTTP/2 capture. Start it
+The native executable supports persistent HTTP/1.1, HTTPS MITM, HTTP/2, and
+WebSocket-over-TLS capture. Start it
 in one shell and query it from another:
 
 ```bash
@@ -92,8 +93,8 @@ are reported as limitations rather than silently treated as captured.
 
 The native executable also persists attach state and network evidence. Its first
 network run creates `$HOME/.lynx/certs/daemon.pem`; install that CA in the
-debuggable app/device before HTTPS capture. TLS-WebSocket and QUIC/HTTP3 are under
-construction 🚧 and must be reported as native limitations.
+debuggable app/device before HTTPS capture. QUIC/HTTP3 remains under
+construction 🚧 and must be reported as a native limitation.
 
 ## Agent operating rules
 

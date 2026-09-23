@@ -249,7 +249,7 @@ class PosixNativeNetworkInspector(
             }
             return macProxy.apply(port)
         }
-        if (androidRelay.available()) {
+        if (androidRelay.available(session.deviceSerial)) {
             val relay = androidRelay.start(session.deviceSerial, session.packageName, session.processId, port, captureId = store.captureId() ?: error("ANDROID_RELAY_CAPTURE_ID_UNAVAILABLE"), captureToken)
             val previous = androidProxy.apply(session.deviceSerial, "127.0.0.1", relay.relayPort).toMutableMap()
             previous["controller"] = "android-relay"

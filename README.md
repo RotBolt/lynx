@@ -94,8 +94,8 @@ lynx network stop --json
 ```
 
 The first run creates a CA at `$HOME/.lynx/certs/daemon.pem`; install it in the
-debuggable app/device trust store for HTTPS. Native HTTP/2 capture is included;
-TLS-WebSocket and QUIC/HTTP3 remain under construction 🚧.
+debuggable app/device trust store for HTTPS. Native HTTP/2 and TLS-WebSocket
+capture are included; QUIC/HTTP3 remains under construction 🚧.
 
 Manage the native CA material without a JVM:
 
@@ -218,7 +218,7 @@ not part of the current working CLI:
 - `lynx network watch --jsonl` continuous streaming mode.
 - `lynx db snapshots ...` snapshot history listing.
 - `lynx db diff ...` and `lynx db watch ...`.
-- TUI views, persistent evidence export/import, and JVMTI attribution.
+- TUI views, persistent evidence export/import, and optional JVMTI enrichment.
 - physical iOS capture and complete simulator transport parity; simulator
   attach/database and host-proxy capture are available, with localhost/bypass
   cases 🚧 under construction.

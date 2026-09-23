@@ -9,7 +9,7 @@ Lynx now has a Kotlin Multiplatform native CLI target graph:
 
 | Target | Artifact | Status |
 |---|---|---|
-| macOS ARM64 | `lynx-macos-arm64.tar.gz` | Database inspection, HTTP/1.1, HTTPS MITM, HTTP/2, and plain WebSocket capture available; TLS-WebSocket adapter under construction 🚧 |
+| macOS ARM64 | `lynx-macos-arm64.tar.gz` | Database inspection, HTTP/1.1, HTTPS MITM, HTTP/2, and WebSocket-over-TLS capture available |
 | Linux x64 | `lynx-linux-x64.tar.gz` | Native HTTP/1.1, HTTPS MITM, HTTP/2, and plain WebSocket capture; the archive carries Debian 12-compatible OpenSSL/nghttp2/Brotli runtime libraries |
 | Windows x64 | — | Common KMP code compiles; native runtime adapters under construction 🚧 |
 
@@ -19,8 +19,11 @@ portable command/result contract in `commonMain`; its JVM proxy is isolated in
 proxy. The standalone executable therefore does not load the JVM network
 backend, Netty, or a JVM TLS provider.
 
-Each archive contains the executable named `lynx`, native TLS/HTTP2/Brotli runtime libraries, and
-`lynx-skill/SKILL.md`. Install the executable on `PATH` (for example,
+The macOS archive also contains ABI-matched Android relay helpers under
+`android-relay/`, a verified `lynx-bundle.json` manifest, native TLS/HTTP2/Brotli
+runtime libraries, and `lynx-skill/SKILL.md`. Lynx auto-selects the relay helper
+from its extracted archive; `LYNX_ANDROID_RELAY_BINARY` remains a development
+override. Install the executable on `PATH` (for example,
 `$HOME/.local/bin`) and point an agent harness at the bundled skill file.
 Verify the executable with `lynx --version`.
 SHA-256 checksums are published with each release.
@@ -101,11 +104,11 @@ SQLite inspection is performed by the host `sqlite3` command in read-only mode.
 Both platforms use the same `db list` / `db snapshot` syntax. Android targets
 use `--device` (ADB serial) and `--package` (application ID); iOS Simulator
 targets use `--simulator` (UDID) and `--bundle-id`. Native `network start`, `stop`,
-`list`, `get`, and `doctor` share a JSONL evidence store across independent
+`list`, `snapshot`, `get`, and `doctor` share a JSONL evidence store across independent
 invocations. The native proxy forwards and records cleartext HTTP/1.1, HTTPS
-CONNECT, and HTTP/2 traffic using the host OpenSSL and nghttp2 runtimes. The
-first run creates a CA under `$HOME/.lynx/certs`; install `daemon.pem` in the
-debug app/device trust store. TLS-WebSocket and QUIC/HTTP3 remain under
+CONNECT, HTTP/2, and WebSocket-over-TLS traffic using the host OpenSSL and
+nghttp2 runtimes. The first run creates a CA under `$HOME/.lynx/certs`; install
+`daemon.pem` in the debug app/device trust store. QUIC/HTTP3 remains under
 construction 🚧.
 
 Native CA lifecycle commands are available without the JVM distribution:
@@ -118,3 +121,19 @@ lynx network ca remove --json
 
 `install` creates or refreshes the host CA and prints explicit trust-store
 instructions; it never mutates an Android or iOS trust store implicitly.
+
+## Package from source
+
+macOS packaging requires Homebrew OpenSSL/nghttp2/Brotli and prebuilt Android
+relay helpers. Developers need no NDK to run extracted archives; NDK is only
+needed by maintainers building helpers:
+
+```bash
+./scripts/build-android-relay.sh build/android-relay
+./gradlew :apps:cli:linkReleaseExecutableMacosArm64 --no-daemon
+./scripts/package-macos-native.sh \
+  apps/cli/build/bin/macosArm64/releaseExecutable/lynx.kexe \
+  /tmp/lynx-macos-arm64.tar.gz \
+  build/android-relay
+./scripts/verify-macos-native-package.sh /tmp/lynx-macos-arm64.tar.gz
+```
