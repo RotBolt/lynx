@@ -46,12 +46,13 @@ class PosixNativeCertificateAuthority(
             // reinstall). Never reuse a cached leaf signed by an older root: Android
             // then reports `certificate_unknown` even when the newly installed root
             // fingerprint is correct.
-            if (!exists(cert) || !exists(key) || !leafChainsTo(cert, ca)) {
+            if (!exists(cert) || !exists(key) || !leafChainsTo(cert, ca) || !leafIncludesIssuer(cert)) {
                 val temporary = "$root/.leaf-$safe.${getpid()}.${kotlin.time.Clock.System.now().toEpochMilliseconds()}"
                 val temporaryCert = "$temporary.pem"
                 val temporaryKey = "$temporary.key"
                 val csr = "$temporary.csr"
                 val ext = "$temporary.ext"
+                val chain = "$temporary.chain.pem"
                 val san = if (host.matches(Regex("[0-9.]+"))) "IP:$host" else "DNS:$host"
                 try {
                     PosixProcessRunner().run(listOf("sh", "-c", "printf '%s\\n' 'basicConstraints=critical,CA:FALSE' 'keyUsage=critical,digitalSignature,keyEncipherment' 'extendedKeyUsage=serverAuth' 'subjectKeyIdentifier=hash' 'authorityKeyIdentifier=keyid,issuer' 'subjectAltName=$san' > '$ext'"))
@@ -59,10 +60,13 @@ class PosixNativeCertificateAuthority(
                     require(keyResult.exitCode == 0) { "CA_LEAF_KEYGEN_FAILED host=$host: ${keyResult.stderr}" }
                     val signResult = runner.run(listOf("openssl", "x509", "-req", "-in", csr, "-CA", "$root/daemon.pem", "-CAkey", "$root/daemon.key", "-CAcreateserial", "-out", temporaryCert, "-days", "365", "-extfile", ext))
                     require(signResult.exitCode == 0) { "CA_LEAF_SIGN_FAILED host=$host: ${signResult.stderr}" }
-                    val publish = runner.run(listOf("sh", "-c", "mv -f '$temporaryCert' '$cert' && mv -f '$temporaryKey' '$key'"))
+                    // Android/Conscrypt clients may not build a path from a user-installed
+                    // anchor unless the server sends the issuing certificate. Serve the leaf
+                    // followed by Lynx Local CA, as Charles/Proxyman do for MITM handshakes.
+                    val publish = runner.run(listOf("sh", "-c", "cat '$temporaryCert' '$ca' > '$chain' && mv -f '$chain' '$cert' && mv -f '$temporaryKey' '$key'"))
                     require(publish.exitCode == 0) { "CA_LEAF_PUBLISH_FAILED host=$host: ${publish.stderr}" }
                 } finally {
-                    runner.run(listOf("rm", "-f", temporaryCert, temporaryKey, csr, ext))
+                    runner.run(listOf("rm", "-f", temporaryCert, temporaryKey, csr, ext, chain))
                 }
             }
         }
@@ -71,6 +75,9 @@ class PosixNativeCertificateAuthority(
 
     private fun leafChainsTo(leaf: String, ca: String): Boolean =
         runner.run(listOf("openssl", "verify", "-CAfile", ca, leaf)).exitCode == 0
+
+    private fun leafIncludesIssuer(leaf: String): Boolean =
+        runner.run(listOf("sh", "-c", "test \"$(grep -c 'BEGIN CERTIFICATE' '$leaf' 2>/dev/null)\" -ge 2")).exitCode == 0
 
     fun fingerprint(): String? = runner.run(listOf("openssl", "x509", "-in", ensureCa(), "-noout", "-fingerprint", "-sha256")).stdout.trim().substringAfter("=", "").replace(":", ":").takeIf(String::isNotBlank)
 

@@ -74,6 +74,9 @@ static bool socket_table_has_relay_peer(const char *path, bool ipv6_table, const
     while (!found && fgets(line, sizeof(line), table)) {
         char remote[65] = {0}, host[INET_ADDRSTRLEN] = {0};
         unsigned remote_port = 0; unsigned long long candidate_inode = 0;
+        // /proc/net/tcp fields after state are tx/rx, tr, tm->when,
+        // retrnsmt, uid, timeout, inode. Skip retrnsmt and uid; the next
+        // numeric field is the socket inode used for package attribution.
         int fields = sscanf(line, " %*u: %*64[^:]:%*x %64[^:]:%x %*x %*s %*s %*s %*u %*u %llu", remote, &remote_port, &candidate_inode);
         if (fields != 3 || remote_port != config->listen_port) continue;
         bool decoded = ipv6_table ? strlen(remote) == 32 && decode_ipv4_little_endian(remote + 24, host, sizeof(host))

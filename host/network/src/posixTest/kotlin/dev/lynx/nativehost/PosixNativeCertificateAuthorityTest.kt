@@ -65,6 +65,7 @@ class PosixNativeCertificateAuthorityTest {
         val leaf = authority.ensureLeaf("127.0.0.1")
         assertTrue(ca.endsWith("daemon.pem"))
         assertTrue(leaf.certificate.endsWith("leaf-127.0.0.1.pem"))
+        assertEquals(0, PosixProcessRunner().run(listOf("sh", "-c", "test \"$(grep -c 'BEGIN CERTIFICATE' '${leaf.certificate}')\" -ge 2")).exitCode)
         assertNotNull(authority.fingerprint())
     }
 
