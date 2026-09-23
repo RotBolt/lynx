@@ -1,5 +1,52 @@
 # Architecture
 
+## 0. Kotlin Multiplatform structure
+
+Lynx uses Kotlin Multiplatform for public models, native host integration, and
+the released CLI. The native executable is the primary developer distribution;
+the JVM path remains a compatibility and regression-test backend while the
+remaining host services migrate.
+
+```text
+core:model                 KMP common contracts and JSON-facing models
+host:native                 KMP POSIX process, tool, proxy, and target adapters
+host:network                KMP network contracts + native proxy implementations
+apps:cli                    KMP command surface and platform entry points
+                              ├── macosArm64Main  released `lynx`
+                              ├── linuxX64Main    native runtime/smoke target
+                              ├── mingwX64Main    target scaffold
+                              └── jvmMain         compatibility CLI
+
+host:session                JVM compatibility session service
+host:adb                    JVM compatibility ADB client
+host:daemon                 JVM compatibility daemon protocol
+host:database               JVM SQLite inspector and regression backend
+```
+
+Source-set boundaries:
+
+- `commonMain` owns platform-neutral models, commands, and contracts.
+- `nativeMain`/`posixMain` owns native process execution and host integration.
+- `macosArm64Main`, `linuxX64Main`, and `mingwX64Main` provide platform entry
+  points and native interop.
+- `jvmMain` is retained for compatibility tests and the legacy daemon path; it
+  is not required to run a released native executable.
+
+Public models never depend on JVM classes, proxy-library types, SQLite-driver
+types, or AOSP protocol types. Platform code implements adapters behind the
+common contracts.
+
+Build targets:
+
+```bash
+./gradlew :apps:cli:linkReleaseExecutableMacosArm64 --no-daemon
+./gradlew test --no-daemon
+```
+
+The first command produces the native `lynx` executable. The repository-wide
+`test` task remains JVM-backed so existing compatibility and database tests stay
+available while native tests run through their target-specific tasks.
+
 ## 1. Core model
 
 Lynx is an **evidence collection system**, not a headless Android Studio clone.
@@ -61,7 +108,7 @@ data class DatabaseSnapshot(
     val snapshotId: SnapshotId,
     val databaseId: DatabaseId,
     val sourceFingerprint: DatabaseFingerprint,
-    val localPath: Path,
+    val localPath: String,
     val consistent: Boolean,
     val consistencyMethod: String
 )
@@ -83,10 +130,10 @@ This lets us correlate later without changing Network/DB schemas.
 ## 3. Network architecture
 
 ```text
-Android app
-   │ HTTP/HTTPS
+Android app or iOS Simulator app
+   │ HTTP/HTTPS/WebSocket
    ▼
-Lynx proxy
+Host-side Lynx proxy
    │
    ├── request/response lifecycle
    ├── headers
@@ -116,14 +163,22 @@ interface NetworkCaptureSource {
 
 The proxy engine is replaceable and never leaks into public models.
 
-The production boundary has two adapters:
+The production boundary has target-specific adapters:
 
 ```kotlin
 interface ProxyEngine { /* HTTP/HTTPS lifecycle and capabilities */ }
 interface AndroidProxyController {
     /* inspect/apply/restore Android System Proxy with a transactional lease */
 }
+
+interface HostProxyController {
+    /* inspect/apply/restore the host proxy for Simulator capture */
+}
 ```
+
+Native macOS implementations configure Android through ADB and iOS Simulator
+traffic through the macOS system proxy. JVM proxy implementations remain behind
+the compatibility backend and are not public models.
 
 The controller records the exact previous proxy configuration and restores it
 on stop, detach, daemon shutdown, and failed startup. A lease is idempotent.
@@ -136,10 +191,11 @@ and can be retrieved by request ID. `network list` may return summaries, while
 semantic truncation. Retention is session-owned and may use disk-backed blobs;
 storage exhaustion is an explicit error.
 
-## 4. Android proxy control
+## 4. Target proxy control
 
 Owns:
-- configure/remove Android system proxy;
+- configure/remove Android system proxy through ADB;
+- configure/restore the macOS proxy used by iOS Simulator capture;
 - determine device-reachable host endpoint;
 - save and restore previous proxy state;
 - CA setup/diagnostics;
@@ -152,10 +208,11 @@ Limitations must be explicit:
 - custom/native transports may bypass proxy.
 
 Proxy control is session-scoped and transactional. Lynx records the prior
-Android System Proxy state, applies a concrete device-reachable endpoint, and
-restores the exact prior state on network stop, detach, daemon shutdown, or
-partial startup failure. Emulator `10.0.2.2` and physical-device LAN
-addresses are endpoint choices; `0.0.0.0` is only a bind address.
+Android System Proxy or macOS service proxy state, applies a concrete
+device-reachable endpoint, and restores the exact prior state on network stop,
+detach, daemon shutdown, or partial startup failure. Emulator `10.0.2.2` and
+physical-device LAN addresses are endpoint choices; `0.0.0.0` is only a bind
+address.
 
 The proxy engine is replaceable behind an adapter. Public models must not expose
 proxy-library request, response, flow, or TLS types. Failed exchanges are
@@ -165,18 +222,12 @@ through `network get`.
 ## 5. Database architecture
 
 ```text
-debuggable app
-   │
- adb + run-as
-   │
- databases/
-   ├── app.db
-   ├── app.db-wal
-   └── app.db-shm
-   │
- consistent snapshot acquisition
-   │
- host SQLite
+Android app files ── ADB + run-as ─────┐
+                                       ├── target database adapter
+iOS Simulator files ── simctl/files ──┘
+             │ read-only snapshot acquisition
+   ▼
+host `sqlite3` inspection
    │
  schema/query/diff
    │
@@ -195,7 +246,11 @@ interface DatabaseSource {
 }
 ```
 
-Future iOS/local-file implementations can reuse the SQLite engine.
+The native CLI uses target adapters plus the host `sqlite3` executable. The JVM
+`host:database` module remains the compatibility inspector and test backend.
+Both paths publish the same source-independent database models and read-only
+semantics. Future native SQLite bindings can replace the external executable
+without changing the CLI contract.
 
 `DatabaseId` is the stable app-relative logical database identity. `SnapshotId`
 identifies one exact captured state and is used by schema, tables, query, and
@@ -237,32 +292,3 @@ Correlation uses:
 
 JVMTI must not become required for:
 `network list/get/watch`, `db snapshot/query/diff/watch`.
-
-## 8. ADRs
-
-### ADR-001: proxy-first network
-Rich HTTP evidence, mature model, platform portability, no Android Studio internals.
-
-### ADR-002: SQLite-first database
-SQLite is already the durable data representation. Observe it directly and safely.
-
-### ADR-003: Evidence Timeline
-End-to-end AI debugging needs chronology across subsystems.
-
-### ADR-004: JVMTI as enrichment
-Attribution is valuable but not foundational.
-
-### ADR-005: source-independent schemas
-CLI JSON must not expose proxy-library or SQLite-driver implementation details.
-
-### ADR-006: session continuity across process restarts
-The session is identified by package/device, not PID. If the app process dies,
-the supervisor keeps the session in `PROCESS_LOST`, discovers the replacement
-PID, and resumes collectors. Evidence records retain the PID observed when
-captured.
-
-### ADR-007: versioned machine contract
-Every JSON/JSONL record includes `type` and `schema_version`; daemon transport
-also declares `protocol_version`. Additive fields are compatible; removals or
-renames require a new schema version. Stable errors use a machine-readable
-`code`, operation, resource, message, retryability, and session ID.
