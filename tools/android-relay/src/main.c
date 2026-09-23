@@ -137,6 +137,26 @@ static void pump(int left, int right) {
 
 static bool line_method_url(const char *headers, char *method, char *url) { return sscanf(headers, "%15s %2047s", method, url) == 2; }
 
+static bool send_all(int fd, const void *data, size_t length) {
+    const uint8_t *bytes = data;
+    for (size_t offset = 0; offset < length;) {
+        ssize_t written = send(fd, bytes + offset, length - offset, 0);
+        if (written <= 0) return false;
+        offset += (size_t)written;
+    }
+    return true;
+}
+
+static bool send_metadata_preface(int fd, const lynx_relay_config *config) {
+    char metadata[4096];
+    int length = snprintf(metadata, sizeof(metadata),
+        "{\"protocol_version\":1,\"capture_id\":\"%s\",\"capture_token\":\"%s\",\"device_serial\":\"%s\",\"package_name\":\"%s\",\"decision\":\"verified_target\",\"method\":\"android-proc-inode\"}",
+        config->capture_id ? config->capture_id : "", config->capture_token ? config->capture_token : "", config->device_serial ? config->device_serial : "", config->package_name ? config->package_name : "");
+    if (length <= 0 || (size_t)length >= sizeof(metadata) || (size_t)length > LYNX_RELAY_MAX_HEADER_BYTES) return false;
+    uint8_t prefix[4] = {(uint8_t)((unsigned)length >> 24), (uint8_t)((unsigned)length >> 16), (uint8_t)((unsigned)length >> 8), (uint8_t)length};
+    return send_all(fd, prefix, sizeof(prefix)) && send_all(fd, metadata, (size_t)length);
+}
+
 int lynx_relay_forward(int client, const lynx_relay_config *config) {
     char headers[LYNX_RELAY_MAX_HEADER_BYTES + 1], method[16] = {0}, url[2048] = {0};
     ssize_t length = read_proxy_headers(client, headers, sizeof(headers));
@@ -155,7 +175,7 @@ int lynx_relay_forward(int client, const lynx_relay_config *config) {
     int upstream = lynx_relay_connect(owned ? config->upstream_host : host, owned ? config->upstream_port : port);
     if (upstream < 0) return -1;
     if (owned) {
-        if (send(upstream, headers, (size_t)length, 0) != length) { close(upstream); return -1; }
+        if (!send_metadata_preface(upstream, config) || !send_all(upstream, headers, (size_t)length)) { close(upstream); return -1; }
     } else if (!strcmp(method, "CONNECT")) {
         if (send(client, "HTTP/1.1 200 Connection Established\r\n\r\n", 39, 0) <= 0) { close(upstream); return -1; }
     } else {
@@ -174,7 +194,7 @@ static bool parse_number(const char *value, long min, long max, long *out) {
     if (errno || !end || *end || parsed < min || parsed > max) return false; *out = parsed; return true;
 }
 
-static void usage(const char *program) { fprintf(stderr, "Usage: %s --package <id> --pid <pid> --listen-port <port> --upstream-host <host> --upstream-port <port> [--token <token>]\n", program); }
+static void usage(const char *program) { fprintf(stderr, "Usage: %s --package <id> --pid <pid> --listen-port <port> --upstream-host <host> --upstream-port <port> --capture-id <id> --device <serial> --token <token>\n", program); }
 
 int main(int argc, char **argv) {
     lynx_relay_config config = {0}; long pid = 0, listen_port = 0, upstream_port = 0;
@@ -185,9 +205,12 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[index], "--listen-port") && parse_number(argv[index + 1], 1, UINT16_MAX, &listen_port)) config.listen_port = (uint16_t)listen_port;
         else if (!strcmp(argv[index], "--upstream-host")) config.upstream_host = argv[index + 1];
         else if (!strcmp(argv[index], "--upstream-port") && parse_number(argv[index + 1], 1, UINT16_MAX, &upstream_port)) config.upstream_port = (uint16_t)upstream_port;
-        else if (!strcmp(argv[index], "--token")) config.capture_token = argv[index + 1]; else { usage(argv[0]); return 2; }
+        else if (!strcmp(argv[index], "--token")) config.capture_token = argv[index + 1];
+        else if (!strcmp(argv[index], "--capture-id")) config.capture_id = argv[index + 1];
+        else if (!strcmp(argv[index], "--device")) config.device_serial = argv[index + 1];
+        else { usage(argv[0]); return 2; }
     }
-    if (!lynx_relay_valid_package(config.package_name) || config.pid <= 0 || !config.listen_port || !config.upstream_host || !config.upstream_port) { usage(argv[0]); return 2; }
+    if (!lynx_relay_valid_package(config.package_name) || config.pid <= 0 || !config.listen_port || !config.upstream_host || !config.upstream_port || !config.capture_id || !config.device_serial || !config.capture_token) { usage(argv[0]); return 2; }
     int server = socket(AF_INET, SOCK_STREAM, 0); if (server < 0) return 1;
     int reuse = 1; (void)setsockopt(server, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
     struct sockaddr_in address = {0}; address.sin_family = AF_INET; address.sin_port = htons(config.listen_port); address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);

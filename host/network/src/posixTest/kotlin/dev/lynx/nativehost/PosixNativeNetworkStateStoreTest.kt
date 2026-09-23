@@ -1,6 +1,18 @@
 package dev.lynx.nativehost
 
 import dev.lynx.model.NetworkCapabilities
+import dev.lynx.model.EvidenceId
+import dev.lynx.model.EvidenceMeta
+import dev.lynx.model.EvidenceSource
+import dev.lynx.model.NetworkCaptureMetadata
+import dev.lynx.model.NetworkExchange
+import dev.lynx.model.NetworkFrame
+import dev.lynx.model.NetworkRequest
+import dev.lynx.model.NetworkResponse
+import dev.lynx.model.NetworkTiming
+import dev.lynx.model.RequestId
+import dev.lynx.model.SessionId
+import kotlinx.datetime.Instant
 import kotlin.concurrent.atomics.AtomicInt
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
 import kotlin.test.Test
@@ -10,6 +22,26 @@ import platform.posix.usleep
 
 @OptIn(ExperimentalAtomicApi::class)
 class PosixNativeNetworkStateStoreTest {
+    @Test
+    fun incrementalWebSocketPrefixesMaterializeAsOneLatestExchange() {
+        val root = "/tmp/lynx-network-live-ws-${kotlin.time.Clock.System.now().toEpochMilliseconds()}"
+        val store = PosixNativeNetworkStateStore(root)
+        val meta = EvidenceMeta(EvidenceId("ev"), SessionId("session"), Instant.fromEpochMilliseconds(1), EvidenceSource.NETWORK, "emulator-5554", "dev.lynx.dummyapp", 42)
+        val requestId = RequestId("ws-live")
+        fun exchange(frames: List<NetworkFrame>) = NetworkExchange(
+            meta, requestId, NetworkRequest("GET", "wss://example.test/raw", emptyMap(), null),
+            NetworkResponse(101, emptyMap(), null), null, NetworkTiming(1, null, null),
+            NetworkCaptureMetadata(false, 0, false), "WebSocket", frames,
+        )
+
+        store.append(exchange(emptyList()))
+        store.append(exchange(listOf(NetworkFrame("CLIENT_TO_SERVER", "TEXT", "ping"))))
+
+        val values = store.list(dev.lynx.model.NetworkFilter())
+        assertEquals(1, values.size)
+        assertEquals("ping", values.single().frames.single().payload)
+    }
+
     @Test
     fun legacyReadinessAckWithoutCaptureIdentityIsRejected() {
         val store = PosixNativeNetworkStateStore("/tmp/lynx-network-state-legacy-ready-${kotlin.time.Clock.System.now().toEpochMilliseconds()}")

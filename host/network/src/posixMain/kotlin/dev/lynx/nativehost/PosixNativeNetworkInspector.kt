@@ -2,7 +2,21 @@ package dev.lynx.nativehost
 
 import dev.lynx.model.*
 import kotlinx.cinterop.*
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
 import platform.posix.*
+
+@Serializable
+private data class AndroidRelayPreface(
+    @SerialName("protocol_version") val protocolVersion: Int,
+    @SerialName("capture_id") val captureId: String,
+    @SerialName("capture_token") val captureToken: String,
+    @SerialName("device_serial") val deviceSerial: String,
+    @SerialName("package_name") val packageName: String,
+    val decision: String,
+    val method: String,
+)
 
 /** Native, process-independent proxy. Protocol parsing stays in the shared POSIX layer while TLS
  * and HPACK are provided by the platform's native adapters. */
@@ -137,12 +151,13 @@ class PosixNativeNetworkInspector(
             return macProxy.apply(port)
         }
         if (androidRelay.available()) {
-            val relay = androidRelay.start(session.deviceSerial, session.packageName, session.processId, port, captureToken)
+            val relay = androidRelay.start(session.deviceSerial, session.packageName, session.processId, port, captureId = store.captureId() ?: error("ANDROID_RELAY_CAPTURE_ID_UNAVAILABLE"), captureToken)
             val previous = androidProxy.apply(session.deviceSerial, "127.0.0.1", relay.relayPort).toMutableMap()
             previous["controller"] = "android-relay"
             previous["relayPath"] = relay.remotePath
             previous["relayPid"] = relay.relayPid
             previous["relayPort"] = relay.relayPort.toString()
+            previous["relayUpstreamPort"] = relay.upstreamPort.toString()
             return previous
         }
         val visibleHost = when {
@@ -170,6 +185,7 @@ class PosixNativeNetworkInspector(
                 remotePath = previous["relayPath"] ?: return,
                 relayPid = previous["relayPid"] ?: return,
                 relayPort = previous["relayPort"]?.toIntOrNull() ?: return,
+                upstreamPort = previous["relayUpstreamPort"]?.toIntOrNull() ?: return,
             )
             androidRelay.stop(session.deviceSerial, relay)
         }
@@ -329,9 +345,11 @@ class PosixNativeNetworkInspector(
         fcntl(client, F_SETFL, fcntl(client, F_GETFL) and O_NONBLOCK.inv())
         val started = getTimeMillis()
         var admissionDecision: ConnectionAdmission.Decision? = null
+        var relayPrefaceSeen = false
         try {
+            val relayPrefix = readRelayPreface(client) { relayPrefaceSeen = true }
             admissionDecision = admission(client)
-            val raw = readHeaders(client)
+            val raw = readHeaders(client, relayPrefix)
             val request = NativeHttpParser.parseRequest(raw)
             if (admissionDecision is ConnectionAdmission.Decision.PassThrough) {
                 forwardWithoutRecording(client, request, raw)
@@ -367,7 +385,7 @@ class PosixNativeNetworkInspector(
         } catch (t: Throwable) {
             // Foreign/unknown iOS connections are deliberately opaque. Never retain their
             // parse/TLS failures as if they belonged to the attached app.
-            if (admissionDecision !is ConnectionAdmission.Decision.PassThrough) {
+            if (!relayPrefaceSeen && admissionDecision !is ConnectionAdmission.Decision.PassThrough) {
                 runCatching { store.append(failureExchange(client, started, t.message ?: t::class.simpleName.orEmpty())) }
             }
         } finally { close(client) }
@@ -675,7 +693,26 @@ class PosixNativeNetworkInspector(
     /** Read exactly through the header terminator. A bulk recv can consume the
      * beginning of a TLS ClientHello after CONNECT, so this intentionally reads
      * one byte at a time at the protocol boundary. */
-    private fun readHeaders(fd: Int): String { val bytes = mutableListOf<Byte>(); while (bytes.size < 1024 * 1024) { memScoped { val native = allocArray<ByteVar>(1); val count = recv(fd, native, 1uL, 0); if (count <= 0) return bytes.toByteArray().decodeToString(); bytes += native[0] }; if (bytes.size >= 4 && bytes.takeLast(4).toByteArray().decodeToString() == "\r\n\r\n") break }; return bytes.toByteArray().decodeToString() }
+    private fun readRelayPreface(fd: Int, seen: () -> Unit): ByteArray {
+        val prefix = ByteArray(4)
+        val peeked = prefix.usePinned { recv(fd, it.addressOf(0), 4uL, MSG_PEEK) }
+        if (peeked < 4) return ByteArray(0)
+        val length = ((prefix[0].toInt() and 0xff) shl 24) or ((prefix[1].toInt() and 0xff) shl 16) or
+            ((prefix[2].toInt() and 0xff) shl 8) or (prefix[3].toInt() and 0xff)
+        if (length !in 1..64 * 1024) return ByteArray(0)
+        seen()
+        readExactly(fd, 4)?.let { }
+        val raw = readExactly(fd, length) ?: error("relay metadata preface truncated")
+        val preface = Json { ignoreUnknownKeys = false }.decodeFromString(AndroidRelayPreface.serializer(), raw.decodeToString())
+        val session = sessions.load() ?: error("relay metadata has no attached session")
+        require(preface.protocolVersion == 1) { "unsupported relay protocol version" }
+        require(preface.captureId == store.captureId()) { "relay capture ID does not match active capture" }
+        require(preface.captureToken == store.captureToken()) { "relay capture token rejected" }
+        require(preface.deviceSerial == session.deviceSerial && preface.packageName == session.packageName) { "relay target does not match attachment" }
+        require(preface.decision == "verified_target") { "relay connection is not verified target" }
+        return ByteArray(0)
+    }
+    private fun readHeaders(fd: Int, initial: ByteArray = ByteArray(0)): String { val bytes = initial.toMutableList(); while (bytes.size < 1024 * 1024) { if (bytes.size >= 4 && bytes.takeLast(4).toByteArray().decodeToString() == "\r\n\r\n") break; memScoped { val native = allocArray<ByteVar>(1); val count = recv(fd, native, 1uL, 0); if (count <= 0) return bytes.toByteArray().decodeToString(); bytes += native[0] } }; return bytes.toByteArray().decodeToString() }
     private fun readUntilClose(fd: Int): ByteArray { val bytes = mutableListOf<Byte>(); memScoped { val buffer = allocArray<ByteVar>(8192); while (true) { val count = recv(fd, buffer, 8192.convert(), 0); if (count <= 0) break; for (i in 0 until count) bytes += buffer[i] } }; return bytes.toByteArray() }
     private fun relayOpaque(left: Int, right: Int) = memScoped {
         val pollers = allocArray<pollfd>(2)
@@ -706,6 +743,8 @@ class PosixNativeNetworkInspector(
     }
     private fun relayPlainWebSocket(client: Int, upstream: Int, request: NativeHttpParser.Request, id: RequestId, response: NativeHttpParser.Response, started: Long) {
         val frames = mutableListOf<NetworkFrame>()
+        fun publish() { store.append(exchange(request, id, response, null, started).copy(protocol = "WebSocket", frames = frames.toList())) }
+        publish()
         memScoped {
             val pollers = allocArray<pollfd>(2)
             var openClient = true; var openUpstream = true; val deadline = getTimeMillis() + 15 * 60_000
@@ -715,15 +754,15 @@ class PosixNativeNetworkInspector(
                 if (poll(pollers, 2u, 250) < 0) break
                 if (openClient && pollers[0].revents.toInt() and POLLIN != 0) {
                     val frame = readFrame(client) ?: run { openClient = false; continue }
-                    sendBytes(upstream, frame.wireBytes); frames += frame.evidence("CLIENT_TO_SERVER")
+                    sendBytes(upstream, frame.wireBytes); frames += frame.evidence("CLIENT_TO_SERVER"); publish()
                 }
                 if (openUpstream && pollers[1].revents.toInt() and POLLIN != 0) {
                     val frame = readFrame(upstream) ?: run { openUpstream = false; continue }
-                    sendBytes(client, frame.wireBytes); frames += frame.evidence("SERVER_TO_CLIENT")
+                    sendBytes(client, frame.wireBytes); frames += frame.evidence("SERVER_TO_CLIENT"); publish()
                 }
             }
         }
-        store.append(exchange(request, id, response, null, started).copy(protocol = "WebSocket", frames = frames))
+        publish()
     }
 
     private fun relayTlsWebSocket(
@@ -737,6 +776,8 @@ class PosixNativeNetworkInspector(
         started: Long,
     ) {
         val frames = mutableListOf<NetworkFrame>()
+        fun publish() { store.append(exchange(request, id, response, null, started).copy(protocol = "WebSocket", frames = frames.toList())) }
+        publish()
         memScoped {
             val pollers = allocArray<pollfd>(2)
             var downstreamOpen = true
@@ -757,6 +798,7 @@ class PosixNativeNetworkInspector(
                     if (frame == null) downstreamOpen = false else {
                         upstream.write(frame.wireBytes)
                         frames += frame.evidence("CLIENT_TO_SERVER")
+                        publish()
                     }
                 }
                 if (upstreamOpen && (upstreamReady || pollers[1].revents.toInt() and (POLLIN or POLLHUP or POLLERR) != 0)) {
@@ -764,11 +806,12 @@ class PosixNativeNetworkInspector(
                     if (frame == null) upstreamOpen = false else {
                         downstream.write(frame.wireBytes)
                         frames += frame.evidence("SERVER_TO_CLIENT")
+                        publish()
                     }
                 }
             }
         }
-        store.append(exchange(request, id, response, null, started).copy(protocol = "WebSocket", frames = frames))
+        publish()
     }
 
     private fun readFrame(fd: Int): NativeWebSocketFrame? = NativeWebSocketFrameCodec.read { readExactly(fd, it) }

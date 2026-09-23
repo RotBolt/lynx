@@ -171,7 +171,25 @@ run_http_action "HTTP/2 Call" "lynx-sample-http2" "HTTP/2" "success_or_not_modif
 previous_ws_id="$(latest_request_id 'ws.postman-echo.com')"
 echo "Triggering real sample-app WebSocket start"
 tap_sample_action "WebSocket Start"
-sleep 2
+if [[ "$PLATFORM" == android ]]; then
+  websocket_open=0
+  for attempt in {1..30}; do
+    window="$(adb -s "$TARGET" shell uiautomator dump /sdcard/lynx-window.xml >/dev/null
+      adb -s "$TARGET" shell cat /sdcard/lynx-window.xml)"
+    if grep -q 'text="WebSocket Close"[^>]*enabled="true"' <<<"$window"; then
+      websocket_open=1
+      break
+    fi
+    if grep -q 'WEBSOCKET: FAILED' <<<"$window"; then
+      echo "FAIL WebSocket: sample app reported failure before the close control enabled" >&2
+      exit 1
+    fi
+    sleep 1
+  done
+  [[ "$websocket_open" == 1 ]] || { echo "FAIL WebSocket: close control did not enable" >&2; exit 1; }
+else
+  sleep 2
+fi
 tap_sample_action "WebSocket Close"
 assert_capture "WebSocket" "ws.postman-echo.com" "$previous_ws_id" "WebSocket" "101" "websocket"
 

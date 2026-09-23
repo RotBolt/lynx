@@ -12,6 +12,8 @@ typedef struct {
     const char *upstream_host;
     uint16_t upstream_port;
     const char *capture_token;
+    const char *capture_id;
+    const char *device_serial;
 } lynx_relay_config;
 bool lynx_relay_valid_package(const char *value);
 bool lynx_relay_socket_owned(const lynx_relay_config *config, unsigned long long *inode);

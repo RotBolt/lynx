@@ -167,7 +167,12 @@ class PosixNativeNetworkStateStore(
                     (urlSubstring == null || exchange.request.url.contains(urlSubstring, ignoreCase = true)) &&
                     (sinceEpochMillis == null || exchange.timing.startedAtEpochMillis >= sinceEpochMillis)
             }
-        return filter.limit?.let { values.takeLast(it) } ?: values
+        // WebSocket exchanges are published incrementally with the same request ID. Present
+        // one materialized exchange (the newest frame prefix) to independent CLI readers.
+        val latest = LinkedHashMap<RequestId, NetworkExchange>()
+        values.forEach { latest[it.requestId] = it }
+        val materialized = latest.values.toList()
+        return filter.limit?.let { materialized.takeLast(it) } ?: materialized
     }
 
     override fun get(requestId: RequestId): NetworkExchange? = list().lastOrNull { it.requestId == requestId }
