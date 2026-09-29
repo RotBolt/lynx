@@ -10,7 +10,7 @@ set -euo pipefail
 #   ./install.sh --local
 #
 # A local checkout is detected automatically. Use --remote to force release
-# download, or pass a release tag after --remote.
+# download, or pass a release tag after --remote (or as the only argument).
 
 readonly REPOSITORY="RotBolt/lynx"
 readonly INSTALL_DIR="${HOME}/.local/bin"
@@ -22,7 +22,7 @@ fail() {
 
 usage() {
   cat <<'EOF'
-Usage: install.sh [--local | --remote [release-tag]]
+Usage: install.sh [--local | --remote [release-tag] | release-tag]
 
   --local                 Install the native executable from this checkout.
   --remote [release-tag]  Download the release archive; default is latest.
@@ -52,7 +52,15 @@ while [[ $# -gt 0 ]]; do
       exit 0
       ;;
     *)
-      fail "unknown argument '$1' (use --help)"
+      # Keep the documented `bash -s -- v0.1.0` form working when the
+      # installer is streamed directly from the repository.
+      if [[ -z "$release_tag" && "$1" != -* ]]; then
+        mode="remote"
+        release_tag="$1"
+        shift
+      else
+        fail "unknown argument '$1' (use --help)"
+      fi
       ;;
   esac
 done
@@ -132,12 +140,19 @@ else
     fail "release download failed. Publish a release asset named $artifact, or run ./install.sh --local from a Lynx checkout"
   fi
 
-  checksum="${tmp_dir}/${artifact}.sha256"
-  if curl -fsSL "$base_url/${artifact}.sha256" -o "$checksum"; then
+  checksum=""
+  for checksum_name in "${artifact}.sha256" "SHA256SUMS"; do
+    candidate="${tmp_dir}/${checksum_name}"
+    if curl -fsSL "$base_url/$checksum_name" -o "$candidate"; then
+      checksum="$candidate"
+      break
+    fi
+  done
+  if [[ -n "$checksum" ]]; then
     if command -v shasum >/dev/null 2>&1; then
-      (cd "$tmp_dir" && shasum -a 256 -c "${artifact}.sha256")
+      (cd "$tmp_dir" && shasum -a 256 -c "$checksum")
     elif command -v sha256sum >/dev/null 2>&1; then
-      (cd "$tmp_dir" && sha256sum -c "${artifact}.sha256")
+      (cd "$tmp_dir" && sha256sum -c "$checksum")
     else
       fail "checksum file was published, but no SHA-256 verifier is available"
     fi
