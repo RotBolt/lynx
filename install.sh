@@ -170,6 +170,14 @@ else
 
   mkdir -p "$INSTALL_DIR"
   install -m 0755 "$binary" "$INSTALL_DIR/lynx"
+  # Native archives carry their runtime libraries beside the executable.
+  # Install those files too; otherwise macOS/Linux users get a command that
+  # exists on PATH but cannot start because its bundled libraries are absent.
+  binary_dir="$(dirname "$binary")"
+  for runtime in "$binary_dir"/*.dylib "$binary_dir"/*.so*; do
+    [[ -f "$runtime" ]] || continue
+    install -m 0755 "$runtime" "$INSTALL_DIR/$(basename "$runtime")"
+  done
   rm -rf "$INSTALL_DIR/lynx-skill"
   mkdir -p "$INSTALL_DIR/lynx-skill"
   cp "$skill_file" "$INSTALL_DIR/lynx-skill/SKILL.md"
